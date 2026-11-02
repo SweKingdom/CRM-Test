@@ -100,3 +100,23 @@ Keycloak stands in for Entra locally. It runs in dev mode on localhost only.
 **Tests:** `SeedTests.cs` (AC 1–4) needs `ZEPHYR_TEST_DB`; CI sets `ZEPHYR_REQUIRE_DB=1`. `tests/seeds.test.mjs` covers AC 5 using `tests/seeds_broken/`.
 
 **Not in this story:** exchange rates (US-134), volume seed set (US-131).
+
+## API conventions (US-133)
+
+All endpoints live under `/api/v1`, use plural camelCase nouns, and are wired with `services.AddApiConventions()` and `app.UseApiConventions()`.
+
+**Paging.** `limit` (default 50, max 200) and `cursor`. Responses are `{items, nextCursor}`; `nextCursor` is null on the last page. Keyset paging on the sort keys plus `id`. The cursor holds the sort signature; a foreign or malformed cursor returns 400.
+
+**Filter and sort.** `filter[field][op]=value` and `sort=-field`. Operators: `eq`, `ne`, `in` (any allow-listed field); `gt`, `gte`, `lt`, `lte` (numbers and dates); `contains` (text, case-insensitive, wildcards literal). Sort keys must be non-nullable. Unknown names return 400.
+
+**Errors.** RFC 9457 `application/problem+json` with `type` (`urn:zephyr:problem:<code>` or `about:blank`), `title`, `status`, `detail`, `traceId`. Validation returns 422 with `errors[]` of `{field, code, message}`. Malformed JSON returns 400. Unhandled errors return 500 without a stack trace.
+
+**Concurrency.** Strong ETag `"<base64url sha256(id + updated_at ticks)>"`. Single-resource GET returns `ETag` and honours `If-None-Match` (304). PATCH requires `If-Match`: missing returns 428, stale returns 412. `updated_at` is the EF concurrency token. Timestamps are truncated to microseconds so the ETag after a save matches the next read.
+
+**Write hooks.** POST, PUT and PATCH endpoints end with `.WithWriteHooks()`. `IWriteValidator` (no-op default) is the seam for FT-113 to FT-125; FT-125 registers the metadata validator. A test fails for any untagged write endpoint.
+
+**Audit user.** `AuditInterceptor` stamps `created_by` and `updated_by` from the `zephyr_user_id` claim (`HttpCurrentUser`). Missing, anonymous or non-GUID claims map to `SystemUser`. The IdP `sub` claim is ignored. US-140 (FT-111) sets `zephyr_user_id` at sign-in; US-142 personal API tokens set the same claim.
+
+**Business dates.** `BusinessClock` works in Europe/Stockholm. A period is `yyyy-MM`; `LockInstant(period)` is 00:00 Stockholm on the 3rd of the next month. Linux images need tzdata or ICU.
+
+**Data.** No schema change for US-133; the migration snapshot is unchanged.
