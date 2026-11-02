@@ -1,16 +1,18 @@
 {
   "name": "zephyr",
   "private": true,
+  "type": "module",
   "description": "Zephyr CRM and project operations. The backend is .NET; these scripts are the project's check entry points.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "seed": "node scripts/seed.mjs",
-    "typecheck": "dotnet build src/backend/Zephyr.Api.Tests --no-incremental -warnaserror && node --check scripts/seed.mjs",
-    "lint": "dotnet format whitespace src/backend/Zephyr.Api --verify-no-changes && dotnet format whitespace src/backend/Zephyr.Api.Tests --verify-no-changes && node --check tests/seeds.test.mjs",
-    "test": "dotnet test src/backend/Zephyr.Api.Tests && node --test tests/seeds.test.mjs",
-    "build": "dotnet build src/backend/Zephyr.Api -c Release -warnaserror"
+    "typecheck": "dotnet build src/backend/Zephyr.Api.Tests --no-incremental -warnaserror && node --check scripts/render-realms.mjs && node --check scripts/lint.mjs && node --check scripts/seed.mjs",
+    "lint": "dotnet format whitespace src/backend/Zephyr.Api --verify-no-changes && dotnet format whitespace src/backend/Zephyr.Api.Tests --verify-no-changes && node scripts/lint.mjs && node --check tests/seeds.test.mjs",
+    "test": "dotnet test src/backend/Zephyr.Api.Tests && node --test \"tests/**/*.test.mjs\"",
+    "build": "dotnet build src/backend/Zephyr.Api -c Release -warnaserror && node --check scripts/render-realms.mjs",
+    "render-realms": "node scripts/render-realms.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

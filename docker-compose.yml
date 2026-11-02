@@ -1,0 +1,13 @@
+# Keycloak service for US-128. US-127 extends this file with the rest of the stack.
+# Start: scripts/render-realms.sh (or .ps1), then `docker compose up`.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?set in .env}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?set in .env}
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ./infra/keycloak/generated:/opt/keycloak/data/import:ro

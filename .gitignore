@@ -4,3 +4,4 @@ bin/
 obj/
 .env
 __pycache__/
+infra/keycloak/generated/
