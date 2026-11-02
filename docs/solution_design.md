@@ -350,3 +350,25 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - Preview lost on restart (high/low): user re-previews.
 - `/api/v1/search` and `source` column semantics assumed from FT-113/FT-114 (medium/medium): confirm in code at build.
 - TTL assumed (low/low).
+
+## Website forms and service inbox (FT-123)
+
+**Modules:** `Zephyr.Api/Public/PublicFormEndpoints.cs` (two anonymous routes), `Zephyr.Api/ServiceRequests/ServiceRequestEndpoints.cs`, migration `AddServiceRequest`, `src/frontend/public/test/forms.html`, tests under `Zephyr.Api.Tests/Public` and `/ServiceRequests`.
+
+**API:** `POST /api/v1/public/enquiries` (US-177, creates lead source=form, lead source "Website", Mailpit ack), `POST /api/v1/public/support-requests` (US-178), `GET/POST /api/v1/service-requests`, `GET/PATCH /api/v1/service-requests/{id}`.
+
+**Data:** `service_request` (account_id null, contact_id null, subject, description, status Open|In progress|Closed, source form|manual, requester_email, custom, standard audit columns).
+
+**Config:** `PUBLIC_FORM_TOKEN`, `PUBLIC_FORM_RATE_PER_MINUTE` (5), `ZEPHYR_FORM_ACK_FROM`.
+
+**Security:** only anonymous write surface; shared form token (deterrent only), honeypot returning identical 202, per-IP rate limit (built-in ASP.NET limiter), 16 KB cap, no data echoed, CR/LF rejected. Staff routes use FT-112 account scope; out of scope → 404.
+
+**Decisions**
+- Ack email sent in-request, failure non-fatal · no queue/outbox needed at ~1 submission/2 days · alternative: FT-121 reminder job.
+- Built-in rate limiter, in-memory per IP · no dependency · resets on restart, single instance assumed.
+- Email-match to contact only on unique exact match · avoids misattribution.
+
+**Risks**
+- Seeded lead source "Website" and `source` column semantics assumed (medium/low): verify at build.
+- Unscoped service requests visible to all staff is an assumption (low/medium): PO to confirm.
+- Public token embedded in test page is not a secret (high/low): rate limit and honeypot are the real controls.
