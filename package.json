@@ -1,0 +1,11 @@
+{
+  "name": "zephyr",
+  "private": true,
+  "description": "Zephyr CRM and project operations. The backend is .NET; these scripts are the project's check entry points.",
+  "scripts": {
+    "typecheck": "dotnet build src/backend/Zephyr.Api.Tests --no-incremental -warnaserror",
+    "lint": "dotnet format whitespace src/backend/Zephyr.Api --verify-no-changes && dotnet format whitespace src/backend/Zephyr.Api.Tests --verify-no-changes",
+    "test": "dotnet test src/backend/Zephyr.Api.Tests",
+    "build": "dotnet build src/backend/Zephyr.Api -c Release -warnaserror"
+  }
+}
