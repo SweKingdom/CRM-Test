@@ -60,10 +60,13 @@ test('AC 3: committed templates contain no plain passwords or secrets', () => {
   assert.deepEqual(plainSecrets({ credentials: [{ type: 'password', value: 'hunter2' }] }), ['$.credentials[0].value']);
 });
 
-test('AC 3: rendering fails and names every missing or empty variable', () => {
-  const vars = { ...allVars, KC_USER_PROJECT_MANAGER_PASSWORD: '' };
+test('AC 3: rendering fails and names every missing, empty or change-me variable', () => {
+  const vars = { ...allVars, KC_USER_PROJECT_MANAGER_PASSWORD: '', KC_USER_FINANCE_PASSWORD: 'change-me' };
   delete vars.KC_USER_BDR_PASSWORD;
-  assert.throws(() => render(load('zephyr-realm.template.json'), vars), /KC_USER_BDR_PASSWORD, KC_USER_PROJECT_MANAGER_PASSWORD/);
+  assert.throws(
+    () => render(load('zephyr-realm.template.json'), vars),
+    /KC_USER_BDR_PASSWORD, KC_USER_FINANCE_PASSWORD, KC_USER_PROJECT_MANAGER_PASSWORD/,
+  );
 });
 
 test('AC 3: passwords with quotes stay valid JSON', () => {
@@ -71,10 +74,11 @@ test('AC 3: passwords with quotes stay valid JSON', () => {
   assert.equal(realm.users.find((u) => u.username === 'pm@example.com').credentials[0].value, 'a"b\\c');
 });
 
-test('AC 3: .env.example values stay empty, so rendering from it unfilled fails; inline comments are not values', () => {
+test('AC 3: .env.example secrets stay change-me, so rendering from it unfilled fails; inline comments are not values', () => {
   const example = parseEnv(readFileSync(new URL('../.env.example', import.meta.url), 'utf8'));
-  for (const name of passwordVars) assert.equal(example[name], '', name);
-  assert.equal(example.OIDC_CLIENT_SECRET, '');
+  for (const name of [...passwordVars, 'OIDC_CLIENT_SECRET', 'KC_USER_B_PASSWORD']) assert.equal(example[name], 'change-me', name);
+  const unfilled = { ...allVars, ...Object.fromEntries(Object.entries(example).filter(([, v]) => v === 'change-me')) };
+  assert.throws(() => render(load('zephyr-realm.template.json'), unfilled), /Missing values in \.env/);
   assert.equal(parseEnv('A=secret # note').A, 'secret');
   assert.equal(parseEnv('A="x # y"').A, 'x # y');
   assert.equal(parseEnv('A=pa#ss').A, 'pa#ss');

@@ -7,9 +7,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "typecheck": "dotnet build src/backend/Zephyr.Api.Tests --no-incremental -warnaserror && node --check scripts/render-realms.mjs && node --check scripts/lint.mjs",
+    "setup-env": "node scripts/setup-env.mjs",
+    "typecheck": "dotnet build src/backend/Zephyr.Api.Tests --no-incremental -warnaserror && node --check scripts/setup-env.mjs && node --check scripts/stack.test.mjs && node --check scripts/render-realms.mjs && node --check scripts/lint.mjs",
     "lint": "dotnet format whitespace src/backend/Zephyr.Api --verify-no-changes && dotnet format whitespace src/backend/Zephyr.Api.Tests --verify-no-changes && node scripts/lint.mjs",
-    "test": "dotnet test src/backend/Zephyr.Api.Tests && node --test \"tests/**/*.test.mjs\"",
+    "test": "dotnet test src/backend/Zephyr.Api.Tests && node --test \"tests/**/*.test.mjs\" scripts/stack.test.mjs",
     "build": "dotnet build src/backend/Zephyr.Api -c Release -warnaserror && node --check scripts/render-realms.mjs",
     "render-realms": "node scripts/render-realms.mjs"
   }
