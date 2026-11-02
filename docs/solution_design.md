@@ -153,3 +153,23 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - 2 s Account 360 for big accounts (low/medium): first page 10, capped counts, indexes on child FKs.
 - Local perf is not cloud proof (certain/low): caveat in report.
 - Consent enum and account delete rules assumed (medium/low): confirm with PO.
+
+## Activity timeline and quick log (FT-114)
+
+**Modules:** `Zephyr.Api/Activities/ActivityEndpoints.cs`; contact account move in `Contacts/ContactEndpoints.cs`; frontend `components/{QuickLogDialog,Timeline}.tsx`, `lib/activities.ts`.
+
+**Data model:** `activity` (type CHECK call/meeting/note/task/email; polymorphic `regarding_type`+`regarding_id`, both-or-neither; server-derived `account_id`; `call_outcome_key` FK; server-set `connected`; `source`), `activity_participant` (role from/to/cc/attendee; exactly one of contact/user/email), `call_outcome` ref (9 seeded, `connected` flag). Timeline keyset index `(account_id, COALESCE(start_at,created_at) DESC, id DESC)`.
+
+**API:** `/api/v1/activities` CRUD + filtered keyset list (regarding / account / type). Client `accountId` and `connected` rejected with 422.
+
+**Security:** visibility follows the regarding record through the FT-112 scope predicate; invisible regarding → 404/422 without leaking existence.
+
+**Decisions**
+- Polymorphic regarding without FK, validated in API · one table per ADR-010 · alternative: per-type link tables.
+- Denormalised server-derived `account_id` · fast timeline query · alternative: join through regarding at read; cost: must be kept in sync (contact move transaction, lead convert re-point).
+- Server computes `connected` from outcome · single source of truth.
+
+**Risks**
+- Connected outcome values assumed (medium/low): confirm against seed file.
+- Lead-convert re-pointing of activities assumed (medium/medium): must be in the convert story.
+- account_id drift on regarding changes (low/medium): recompute on update; tests.
