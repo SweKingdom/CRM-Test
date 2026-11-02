@@ -130,3 +130,26 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - `country` scope vs business unit semantics unclear (medium/medium).
 - Predicate drift between list and search (medium/high): single predicate builder + leak tests.
 - Admin access to time/CRM content undecided (medium/medium).
+
+## App shell, search, Account/Contact 360, performance (FT-113)
+
+**Modules:** `Zephyr.Api/Search/SearchEndpoints.cs`, `Accounts/AccountEndpoints.cs`, `Contacts/ContactEndpoints.cs`; frontend `src/frontend/src/{shell,pages,lib}`; `tools/perf/`; docs `docs/perf/report.md`.
+
+**Data model:** `search_document(entity_type, entity_id, title, subtitle, text, tsv, owner_id, account_id, country_code, business_unit, updated_at)` with GIN(tsv), GIN trigram(text), maintained by DB triggers; `account` and `contact` tables per US-149 (contracting country limited to six via `country.is_contracting`).
+
+**API:** `GET /api/v1/search?q=&types=&limit=` → `{items,fallback}`; accounts and contacts CRUD + `/overview` (sections keyset-paged).
+
+**Security:** search and overview use the shared scope predicate builder from FT-112 inside SQL; invisible → 404; default-deny entity+action declarations; no tokens in browser storage.
+
+**Decisions**
+- Search index kept by triggers in-transaction · no lag, no job · alternatives: periodic job, generated column per table.
+- `simple` FTS config + `unaccent` wrapper + prefix tsquery, trigram fallback when <5 hits · multilingual names, typo tolerance · alternative: language stemmers.
+- Frontend React + TypeScript + Vite, plain CSS, Playwright + axe (assumption, was open) · free, common, full control of contrast/keyboard · alternatives: Blazor, Vue, UI kits.
+- Overview as parallel section queries with `available:false` for not-yet-built sections · independent delivery, fast first paint · alternative: one big join.
+- Perf: k6 (container) + Playwright screen timings, run by hand · free, p95 thresholds built in · alternative: autocannon.
+
+**Risks**
+- Search predicate drift vs lists (medium/high): single builder + leak tests.
+- 2 s Account 360 for big accounts (low/medium): first page 10, capped counts, indexes on child FKs.
+- Local perf is not cloud proof (certain/low): caveat in report.
+- Consent enum and account delete rules assumed (medium/low): confirm with PO.
