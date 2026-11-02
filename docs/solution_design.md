@@ -372,3 +372,19 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - Seeded lead source "Website" and `source` column semantics assumed (medium/low): verify at build.
 - Unscoped service requests visible to all staff is an assumption (low/medium): PO to confirm.
 - Public token embedded in test page is not a secret (high/low): rate limit and honeypot are the real controls.
+
+## GDPR retention, consent, DSAR and audit (FT-124)
+
+**Modules**: Contacts (consent fields), new `Governance` module with `AuditEndpoints`, `RetentionEndpoints`, `DsarEndpoints`; one shared migration `NNN_governance.sql`; one shared `Audit.Write` helper and one shared anonymise routine (used by DSAR and retention).
+
+**Data model**: `contact.consent_status` (Unknown/Granted/Withdrawn, assumption) / `consent_at` / `consent_source`; `anonymised_at` on contact and lead; `retention_rule`, `retention_run`, `retention_run_item`; audit_log gets an append-only trigger and indexes.
+
+**API**: `GET /api/v1/audit-log` (Admin); `PUT/GET /api/v1/retention/rules`, `POST /api/v1/retention/runs`, `:approve`; `POST /api/v1/dsar/contacts/{id}:export|:erase` (+ leads). Permissions `audit.read`, `retention.manage`, `dsar.manage`, Admin only, enforced server-side.
+
+**Decisions**
+- Anonymise rather than delete by default · keeps time and deal aggregates intact · hard delete only for rows without FK aggregates.
+- Retention periods are admin data, none hard-coded · ADR/Mats sign-off pending, does not block build.
+- Audit holds ids only · avoids personal data surviving erasure.
+- Approval window config `RETENTION_APPROVAL_WINDOW_DAYS` (default 14, assumption); expiry by the FT-121 daily job.
+
+**Risks**: erase is irreversible (mitigated by confirm flag, audit, Admin only); search index leaks anonymised person if removal is missed (test AC); consent values and record types are assumptions to confirm with PO.
