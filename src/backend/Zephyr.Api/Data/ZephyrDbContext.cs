@@ -69,7 +69,9 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
             var entity = modelBuilder.Entity(type.ClrType);
             entity.Property(nameof(IEntity.Id)).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(nameof(IEntity.CreatedAt)).HasDefaultValueSql("now()");
-            entity.Property(nameof(IEntity.UpdatedAt)).HasDefaultValueSql("now()");
+            // updated_at is the concurrency token: an UPDATE only succeeds while updated_at is still the value that was
+            // read, which is what makes PATCH with If-Match race-free (ETag = id + updated_at).
+            entity.Property(nameof(IEntity.UpdatedAt)).HasDefaultValueSql("now()").IsConcurrencyToken();
             entity.Property(nameof(IEntity.Custom)).HasColumnType("jsonb").HasDefaultValueSql("'{}'::jsonb");
 
             // Soft delete: default queries exclude rows with deleted_at set.

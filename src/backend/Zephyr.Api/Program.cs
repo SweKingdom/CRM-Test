@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Zephyr.Api.Common;
 using Zephyr.Api.Data;
 
 // "import" mode: apply migrations and exit, no web host (the import itself is added by its own story).
@@ -20,12 +21,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 
-builder.Services.AddScoped<AuditInterceptor>();
-builder.Services.AddDbContext<ZephyrDbContext>((sp, options) =>
-    ZephyrDbContext.Configure(options, sp.GetRequiredService<AuditInterceptor>()));
+// API conventions (US-133) also register the audit interceptor and the DbContext.
+builder.Services.AddApiConventions();
 builder.Services.AddHealthChecks().AddNpgSql(_ => ZephyrDbContext.ConnectionStringFromEnvironment());
 
 var app = builder.Build();
+app.UseApiConventions();
 
 using (var scope = app.Services.CreateScope())
 {
@@ -43,3 +44,8 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 }).AllowAnonymous();
 
 app.Run();
+
+/// <summary>Makes the entry point visible to the integration tests.</summary>
+public partial class Program
+{
+}
