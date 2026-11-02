@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Zephyr.Api.Auth;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
 
@@ -23,10 +24,13 @@ builder.Logging.AddJsonConsole();
 
 // API conventions (US-133) also register the audit interceptor and the DbContext.
 builder.Services.AddApiConventions();
+// Sign-in (US-140): OIDC providers from configuration, session cookie, default-deny authorisation. No CORS: the SPA is same-origin.
+builder.AddZephyrAuth();
 builder.Services.AddHealthChecks().AddNpgSql(_ => ZephyrDbContext.ConnectionStringFromEnvironment());
 
 var app = builder.Build();
 app.UseApiConventions();
+app.UseZephyrAuth();
 
 using (var scope = app.Services.CreateScope())
 {

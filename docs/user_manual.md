@@ -2,14 +2,16 @@
 
 ## Signing in locally
 
-Use this chapter to sign in to the local test environment.
+Zephyr does not have its own passwords. You sign in through the organisation's identity provider.
 
-1. Start the stack: run `scripts/render-realms.sh` (or `scripts/render-realms.ps1`), then `docker compose up`.
-2. Open http://localhost:8180 and choose the realm `zephyr`.
-3. Sign in with one of the test users: admin, salesperson, BDR, project manager, consultant, finance or management, all at `@example.com`.
-4. Use the password you set for that user in your `.env` file. Passwords are never stored in the repository.
+1. Open Zephyr in your browser and select **Sign in**. (Local: `/auth/login?provider=zephyr`.)
+2. Enter your work account in the identity provider's sign-in page.
+3. You are returned to Zephyr and see your name in the header.
 
-Tip: the test users are for local testing only. Do not use them outside your own machine.
+**Tips**
+- If you have no Zephyr account yet, the sign-in is refused. Ask an administrator to create your user.
+- If you see the message "Your account is not set up in Zephyr. Contact an administrator.", your account exists in the identity provider but is not linked to a Zephyr user, or it is deactivated.
+- Signing out clears your session in this browser.
 
 ## Running Zephyr locally
 
