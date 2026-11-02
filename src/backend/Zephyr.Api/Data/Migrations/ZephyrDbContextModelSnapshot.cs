@@ -107,6 +107,7 @@ partial class ZephyrDbContextModelSnapshot : ModelSnapshot
                 .HasColumnName("system");
 
             b.Property<DateTime>("UpdatedAt")
+                .IsConcurrencyToken()
                 .ValueGeneratedOnAdd()
                 .HasColumnType("timestamp with time zone")
                 .HasColumnName("updated_at")
