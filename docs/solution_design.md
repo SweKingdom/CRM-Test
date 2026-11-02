@@ -241,3 +241,26 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - Stale threshold 60 vs 90 migration (medium/low): configurable.
 - Depends on time_entry(project_id, work_date) index for stale query (low/medium).
 - Sequence: US-161 → US-160 → US-162 (needs time entry model); US-160 needs FT-116 close endpoint.
+
+## Weekly time reporting (FT-118)
+
+**Modules:** `Zephyr.Api/Time/{TimeEntryEndpoints.cs, TimeRules.cs, TimeWeekEndpoints.cs}`; frontend `pages/TimeWeek.tsx`, `components/WeekGrid.tsx`, `lib/time.ts`; Seed `time_types.sql`; `docs/testing/usability.md`. Stories: US-163 (types, entry API, rules), US-164 (week grid), US-165 (submit/recall), US-187 (usability tests, by hand).
+
+**Data model:** `time_type` (code PK, billable_default, requires_project, allows_future, active, sort); `time_entry` (user, nullable project, type, work_date, duration_minutes %15, server-derived iso_week, billable, status Draft/Submitted/Approved/Rejected, submitted/approved stamps, rejection_comment, notes ≤500, source enum, dynamics_id, money-convention rate/amount/currency/amount_sek/rate_date). Indexes (user_id, work_date), (project_id, work_date), (user_id, iso_week, status).
+
+**API:** `/api/v1/time-entries` CRUD (ETag); `GET/PUT /api/v1/time-weeks/{isoWeek}` (batch upsert, all-or-nothing, cell-keyed errors); `POST /time-weeks/{isoWeek}:submit|:recall`. Errors RFC 9457 with codes VALIDATION, STATUS_CHANGE_NOT_ALLOWED, PERIOD_LOCKED, NOTHING_TO_SUBMIT; `warnings[]` for >10 h/day.
+
+**Security:** users read/write only their own entries; approvers/Admin via FT-112 predicate; `source` set server-side from channel.
+
+**Decisions**
+- Daily ≤24 h enforced with per-user/date advisory lock in the write transaction · avoids concurrent over-booking · alternative: DB trigger.
+- Week-level batch endpoints, no timer · one call per week meets the 2-minute target.
+- Pure `TimeRules` class · unit-testable without DB.
+- "Future" evaluated in UTC · brief says UTC storage; no per-user timezone.
+- Lock check via `IsLocked(date)` seam, stub until period locking (FT-119/US-168) lands.
+
+**Risks**
+- Time-type list incomplete (11 required, 5 known) (medium/low): asked PO; seed-only change.
+- Team-membership restriction is an assumption (medium/medium): single rule in TimeRules.
+- Mobile grid at 375 px and 2-minute target (medium/medium): card layout under 640 px, validated by US-187.
+- Sequence: US-161 (projects/team) → US-163 → US-164/US-165 → US-187; approval (US-166) and locking depend on this model.
