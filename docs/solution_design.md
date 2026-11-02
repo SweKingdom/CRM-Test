@@ -312,3 +312,20 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - Tile p95 ≤2 s (low/medium): indexes, 100-load test on volume seed.
 - Depends on stamped amounts (FT-119) and time_type category/billable flag (FT-118; assumed present).
 - Sequence: US-170 and US-171 (share Tiles.cs) → US-172; US-169 AC4 needs US-171.
+
+## Automation and reminders (FT-121)
+
+**Modules:** `Zephyr.Api/Reminders/` holds `ReminderJob.cs` (hosted service, `RunOnce`, both rules, SMTP), `ReminderEntities.cs` and `ReminderRuleEndpoints.cs`. One migration adds `reminder_rule` and `reminder_log`.
+
+**Data:** `reminder_rule(key, threshold_days >= 1, active, description)`, seeded with `no_time_7wd` (7) and `stale_opp_30d` (30). `reminder_log(rule_key, recipient_user_id, subject_type, subject_id, reason, status Sent|Failed, attempts, error, sent_at, cleared_at)`. A unique partial index on the subject where `cleared_at IS NULL` enforces one reminder per rule and subject until the condition clears.
+
+**API:** `GET /api/v1/reminder-rules` and `PATCH /api/v1/reminder-rules/{key}`. Admin only, RFC 9457 errors, audited.
+
+**Config:** `SMTP__HOST`, `SMTP__PORT`, `SMTP__FROM`, `Reminders__RunAtUtc`.
+
+**Decisions**
+- Decision: a daily hosted service with an injectable `TimeProvider` and a Postgres advisory lock. Reason: no new infrastructure and deterministic tests. Alternatives: Hangfire, Quartz (new dependencies, not needed).
+- Decision: thresholds are read from the DB at each run. Reason: edits apply at the next run without a deploy or cache invalidation.
+- Decision: dedup lives in the log row (`cleared_at`) and a Failed row is retried on the next run. Reason: one table serves both the audit trail and the dedup state.
+
+**Risks:** Mon–Fri working days with no holiday calendar (low impact). The 30-day stale rule is unconfirmed (question open with PO). An SMTP outage delays reminders until the next run (low).
