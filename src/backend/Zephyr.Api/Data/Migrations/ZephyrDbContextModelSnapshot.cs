@@ -18,6 +18,61 @@ partial class ZephyrDbContextModelSnapshot : ModelSnapshot
 
         NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+        modelBuilder.Entity("Zephyr.Api.Data.Account", b =>
+        {
+            b.Property<Guid>("Id")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("uuid")
+                .HasColumnName("id")
+                .HasDefaultValueSql("gen_random_uuid()");
+
+            b.Property<DateTime>("CreatedAt")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("CreatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("created_by");
+
+            b.Property<string>("CountryCode")
+                .HasColumnType("character(2)")
+                .HasColumnName("country_code");
+
+            b.Property<string>("Custom")
+                .IsRequired()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("jsonb")
+                .HasColumnName("custom")
+                .HasDefaultValueSql("'{}'::jsonb");
+
+            b.Property<DateTime?>("DeletedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("deleted_at");
+
+            b.Property<string>("Name")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("name");
+
+            b.Property<DateTime>("UpdatedAt")
+                .IsConcurrencyToken()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("updated_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("UpdatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("updated_by");
+
+            b.HasKey("Id")
+                .HasName("account_pkey");
+
+            b.ToTable("account", (string)null);
+        });
+
         modelBuilder.Entity("Zephyr.Api.Data.AppUser", b =>
         {
             b.Property<Guid>("Id")
