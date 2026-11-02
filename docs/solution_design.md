@@ -85,3 +85,25 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - README drifts from Compose commands (medium/high): US-139 outsider rebuild after US-137 merges; PR checklist.
 - Assumed six BUILD.md parts and 8 h time box unconfirmed (medium/low): questions raised with PO; template file is the single source.
 - ADR approvers slow to respond (medium/low): does not block development.
+
+## Identity, sessions and API tokens (FT-111)
+
+**Modules:** `src/backend/Zephyr.Api/Auth/AuthModule.cs` (OIDC + cookie, matching, bootstrap, session rules), `Auth/UsersEndpoints.cs` (US-141), `Auth/ApiTokens.cs` (US-142). Tables `app_user` (nullable issuer/subject until linked, roles text[], active) and `api_token` (SHA-256 hash). Auth tests under `Zephyr.Api.Tests/Auth`.
+
+**API:** `/auth/login|logout|me|denied`, `PATCH /api/v1/users/{id}` (Admin, merge-patch `active`, If-Match), `POST|GET|DELETE /api/v1/me/tokens`.
+
+**Config:** `ZEPHYR_AUTH__PROVIDERS__n__*` (Name, Authority, ClientId, ClientSecret, EmailTrusted), `ZEPHYR_BOOTSTRAP_ADMIN_ISSUER/SUBJECT`, `SESSION_IDLE_SECONDS` (14400), `SESSION_ABSOLUTE_SECONDS` (43200), `USER_STATUS_RECHECK_SECONDS` (300).
+
+**Security:** no passwords stored; no self sign-up; email linking only if provider EmailTrusted and `email_verified`; open-redirect check on returnUrl; cookie HttpOnly/SameSite=Lax; tokens cannot create tokens; token plaintext shown once and never logged; revocation checked in DB on every request; deactivation enforced via 5-minute cached status shared by cookie and token auth; all time via `TimeProvider` (fake in tests).
+
+**Decisions**
+- Pre-provisioned users, linked on first sign-in · satisfies no-self-signup and email linking · alternative: JIT creation (rejected).
+- Absolute session via ticket `issued_utc` + sliding idle cookie · plain ASP.NET Core, no session store · alternative: server-side session table.
+- Unsalted SHA-256 for 256-bit random tokens · indexable lookup, no brute-force risk · alternative: HMAC with pepper if security review requires.
+- One OIDC scheme per configured provider · second realm by config only · alternative: single scheme with dynamic authority.
+- 401 for deactivated user's requests · standard for failed auth.
+
+**Risks**
+- SHA-256 not yet approved (low/low): hash function isolated in one method.
+- Status cache is per-instance (low/low): single instance locally; bound is 5 min regardless.
+- Role names assumed from personas (medium/low): confirm with PO.
