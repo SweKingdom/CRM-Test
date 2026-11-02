@@ -388,3 +388,29 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - Approval window config `RETENTION_APPROVAL_WINDOW_DAYS` (default 14, assumption); expiry by the FT-121 daily job.
 
 **Risks**: erase is irreversible (mitigated by confirm flag, audit, Admin only); search index leaks anonymised person if removal is missed (test AC); consent values and record types are assumptions to confirm with PO.
+
+## No-code admin and config pack (FT-125)
+
+**Stories:** US-182 (metadata tables + admin API), US-183 (admin UI, dynamic forms, reference data).
+
+**Modules:** `Zephyr.Api/Metadata/` (`MetadataEndpoints.cs`, `MetadataService.cs`, `ReferenceDataEndpoints.cs`); web: `metadata/useMetadata.ts`, `metadata/DynamicFields.tsx`, `admin/MetadataAdmin.tsx`.
+
+**Data model:** `entity_definition`, `field_definition` (type text/number/date/boolean/picklist; unique entity+key; key/type immutable; `hidden` instead of delete), `picklist`, `picklist_value` (`active` instead of delete), single-row `metadata_version`. Custom values live in each table's `custom` JSONB. Seeded reference tables gain `active`/`sort` where missing.
+
+**API:** `/api/v1/metadata/{version,entities,fields,picklists,...}`; `/api/v1/reference/{list}` and `/reference/exchange-rates`. Reads for any signed-in user (ETag = version); writes Admin only; 422 for invalid custom values (RFC 9457).
+
+**Behaviour:** `MetadataService.ValidateCustom` is called by every entity write endpoint; inactive picklist value is accepted only when unchanged on the record. Every admin change bumps `metadata_version` in the same transaction and writes `audit_log`. The API reloads its snapshot when the version differs (multi-instance safe); the web client polls the version every 30 s (staleness < 60 s).
+
+**Security:** server-side Admin check via FT-112 (`metadata` entity in the matrix); parameterised JSONB paths; stamped `amount_sek`/`rate_date` never rewritten by rate changes.
+
+**Decisions**
+- Version-keyed snapshot + client polling · simple, no push infra, meets 60 s · alternatives: SignalR/SSE, fixed TTL cache.
+- Hide/deactivate, never delete · keeps existing records valid · alternative: hard delete with migration.
+- Stage labels editable, codes and ordering fixed · gates depend on codes · alternative: fully editable stages.
+- One validator shared by all entity endpoints · consistent 422s.
+
+**Risks**
+- Required field added later makes old records fail on edit (medium/low): enforced only on touch.
+- Label/code confusion on the board (low/medium): board uses codes everywhere.
+- Exchange-rate table naming differs from assumption (low/low).
+- Web layout from FT-113 not yet existing: file paths to be adapted (low/low).
