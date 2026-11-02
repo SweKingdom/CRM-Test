@@ -120,3 +120,55 @@ All endpoints live under `/api/v1`, use plural camelCase nouns, and are wired wi
 **Business dates.** `BusinessClock` works in Europe/Stockholm. A period is `yyyy-MM`; `LockInstant(period)` is 00:00 Stockholm on the 3rd of the next month. Linux images need tzdata or ICU.
 
 **Data.** No schema change for US-133; the migration snapshot is unchanged.
+
+## Authentication and sign-in (US-140)
+
+**Flow:** OpenID Connect authorisation code with PKCE, via the standard ASP.NET Core OIDC handler. One OIDC scheme per provider, callback `/signin-oidc-{name}`. Session is a cookie (HttpOnly, SameSite=Lax, Secure when not localhost). `SaveTokens=false`, `MapInboundClaims=false`. Scopes: openid, profile, email.
+
+**Endpoints**
+
+| Route | Access | Notes |
+|---|---|---|
+| GET /auth/login?provider=&returnUrl= | Anonymous | Challenge. `returnUrl` must be a local relative path, otherwise 400. |
+| POST /auth/logout | Session | Clears cookie, 204. |
+| GET /auth/me | Session | 200 `{id,name,email,roles,homeCountry}`; 401 anonymous. |
+| GET /auth/denied | Anonymous | 403 problem+json (RFC 9457). |
+| GET /health | Anonymous | Health check. |
+
+All other `/api/v1/*` routes require an authenticated user (default-deny fallback policy).
+
+**User matching (OnTokenValidated)**
+1. Match on (issuer, subject), not deleted. Found: refuse if `active=false`, else sign in.
+2. Not found, no active admin exists, and (issuer, subject) equal the bootstrap values: create an active Admin, log Warning and write `audit_log` `bootstrap_admin_used`.
+3. Not found, provider `EmailTrusted=true`, claim `email_verified=true`, and an active user with that email and null issuer/subject exists: link and sign in. An email already linked to another subject is refused.
+4. Otherwise refuse (`context.Fail`, redirect to `/auth/denied`) and log the reason. Tokens are never logged.
+
+Session claims: `sub` = `app_user.id`, roles, issuer. `last_login_at` is updated on sign-in.
+
+**CSRF:** cookie-authenticated POST, PUT, PATCH and DELETE to `/api/v1/*` require header `X-Zephyr-Csrf: 1` and a same-origin `Origin`. Otherwise 403 `CSRF_REJECTED`. Bearer-token calls are exempt. GET is unaffected.
+
+**CORS:** none. The SPA is same-origin. The Vite dev server proxies `/api`, `/auth` and `/signin-oidc-*`.
+
+**Data model: `app_user`** (plus baseline columns)
+
+| Column | Type | Notes |
+|---|---|---|
+| name | text not null | |
+| email | text not null | Unique index on lower(email) where deleted_at is null. |
+| issuer | text null | Null until linked. |
+| subject | text null | Unique (issuer, subject) where both not null. |
+| home_country | char(2) null | FK countries. |
+| roles | text[] not null, default '{}' | Values: Salesperson, BDR, PM, Consultant, Finance, Management, Admin. |
+| active | bool not null, default true | |
+| last_login_at | timestamptz null | UTC. |
+
+No password or secret column exists. Users are pre-provisioned; there is no self sign-up.
+
+**Configuration**
+
+| Variable | Notes |
+|---|---|
+| ZEPHYR_AUTH__PROVIDERS__n__NAME / AUTHORITY / CLIENTID / CLIENTSECRET / EMAILTRUSTED | Per provider. Index 0 = `zephyr`, index 1 = `zephyr-b`. Providers only from configuration. |
+| ZEPHYR_BOOTSTRAP_ADMIN_ISSUER / ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT | Optional. Used only while no active admin exists. |
+
+Secrets live only in the gitignored `.env`. Provider 1 `CLIENTSECRET` must equal `OIDC_CLIENT_SECRET`.
