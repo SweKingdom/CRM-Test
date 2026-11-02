@@ -329,3 +329,24 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - Decision: dedup lives in the log row (`cleared_at`) and a Failed row is retried on the next run. Reason: one table serves both the audit trail and the dedup state.
 
 **Risks:** Mon–Fri working days with no holiday calendar (low impact). The 30-day stale rule is unconfirmed (question open with PO). An SMTP outage delays reminders until the next run (low).
+
+## MCP server (FT-122)
+
+**Modules:** `tools/mcp-server/server.ts` (Node/TS, official MCP SDK, stdio; optional Compose profile `mcp`), `Zephyr.Api/Activities/ActivityEndpoints.cs` (accepts `source` for token callers), `Zephyr.Api.Tests/Mcp/McpPermissionTests.cs`.
+
+**Tools:** `search_records`, `preview_log_activity` (no write), `confirm_log_activity` (single-use `previewId`, POST with `source:"mcp"`).
+
+**Config:** `ZEPHYR_API_URL`, `ZEPHYR_MCP_TOKEN`, `MCP_PREVIEW_TTL_SECONDS` (600).
+
+**Security:** MCP is a pure REST client with the user's personal token, so FT-112 scope and FT-111 revocation apply unchanged; no permission logic in MCP. 403 and 404 map to one identical message. Cookie callers cannot set `source=mcp`. Token never logged.
+
+**Decisions**
+- Preview kept in-process memory, TTL 10 min · no schema, no new table · alternative: DB `pending_action` table (survives restarts, more code).
+- Stdio transport, Node · works with free MCP Inspector, no model · alternative: HTTP/SSE server.
+- No retries on confirm · POST not idempotent · alternative: idempotency key.
+- Verify regarding record at preview time · permission failures surface before confirm.
+
+**Risks**
+- Preview lost on restart (high/low): user re-previews.
+- `/api/v1/search` and `source` column semantics assumed from FT-113/FT-114 (medium/medium): confirm in code at build.
+- TTL assumed (low/low).
