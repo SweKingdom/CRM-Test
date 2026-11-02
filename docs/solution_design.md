@@ -107,3 +107,26 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - SHA-256 not yet approved (low/low): hash function isolated in one method.
 - Status cache is per-instance (low/low): single instance locally; bound is 5 min regardless.
 - Role names assumed from personas (medium/low): confirm with PO.
+
+## Roles and permission sets (FT-112)
+
+**Modules:** `Zephyr.Api/Permissions/` — `permission-matrix.csv` (embedded, single source), `PermissionSeeder.cs`, `PermissionService.cs` (scope map + SQL predicates), `PermissionFilter.cs` (route metadata), `PermissionEndpoints.cs`, `Approvers.cs`. Docs: `docs/permissions.md`. Tests under `Zephyr.Api.Tests/Permissions`; Playwright e2e for UI routes.
+
+**Data model:** `role(key,label)`, `role_permission(role_key,entity,action,scope)`, `app_user.manager_id`, `country_code`, `business_unit`, `project_approver(project_id,user_id)`, `approval_delegation(delegator_id,delegate_id,from_date,to_date,revoked_at)`. `app_user.roles` (text[]) keeps role keys; widest scope across roles wins.
+
+**API:** `GET /api/v1/me/permissions`; `PUT|DELETE /api/v1/projects/{id}/approvers/{userId}`; `POST /api/v1/delegations`, `DELETE /api/v1/delegations/{id}`.
+
+**Security:** default deny (every API endpoint must declare entity+action; test enforces); read outside scope → 404, write on visible record without right → 403; scope predicates are parameterised SQL shared by lists, single reads and search; role change effective within the existing 5-min status cache; tokens inherit owner permissions; approvers read only their projects' time; self-approval blocked; delegations evaluated per request in UTC.
+
+**Decisions**
+- Matrix as embedded CSV seeded to tables · reviewable in PRs, DB stays in sync, testable · alternative: admin-editable matrix UI (out of scope).
+- Team = same `manager_id` (no `team_id`) · one concept · alternative: team table.
+- 404 for invisible records, 403 for denied actions · avoids existence leaks.
+- One engine for list, single, search and UI endpoint · parity by construction.
+- Backend permission tests use a test auth handler; Keycloak only in e2e · speed with real-IdP coverage.
+
+**Risks**
+- Matrix values need PO sign-off (medium/high): developer fills from proposal; PO approves `docs/permissions.md`.
+- `country` scope vs business unit semantics unclear (medium/medium).
+- Predicate drift between list and search (medium/high): single predicate builder + leak tests.
+- Admin access to time/CRM content undecided (medium/medium).
