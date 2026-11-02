@@ -6,5 +6,6 @@ dist/
 
 # Secrets and generated files: never commit
 .env
+__pycache__/
 generated/
 infra/keycloak/generated/
