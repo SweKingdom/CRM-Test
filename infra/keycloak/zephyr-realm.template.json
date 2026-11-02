@@ -62,7 +62,7 @@
       "lastName": "Manager",
       "enabled": true,
       "emailVerified": true,
-      "credentials": [{ "type": "password", "value": "${KC_USER_PM_PASSWORD}", "temporary": false }]
+      "credentials": [{ "type": "password", "value": "${KC_USER_PROJECT_MANAGER_PASSWORD}", "temporary": false }]
     },
     {
       "id": "00000000-0000-4000-8000-000000000005",

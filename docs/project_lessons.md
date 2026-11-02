@@ -1,0 +1,2 @@
+- When adding DB triggers or constraints (append-only, immutability), check that the test DB reset (Respawn) still works with them, e.g. via TablesToIgnore, and add a regression test. (US-129, review)
+- DB-backed tests are skipped locally without PostgreSQL, so review DB-affecting changes by hand against the test fixtures, since the first real run happens in CI with ZEPHYR_REQUIRE_DB=1. (US-129, review)

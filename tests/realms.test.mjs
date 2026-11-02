@@ -12,6 +12,15 @@ const allVars = Object.fromEntries(
 allVars.ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT = '7c1f0a52-3b8e-4d6a-9f21-5e4b8a0c1d01';
 
 const roles = ['admin', 'salesperson', 'bdr', 'pm', 'consultant', 'finance', 'management'];
+const passwordVars = [
+  'KC_USER_ADMIN_PASSWORD',
+  'KC_USER_SALESPERSON_PASSWORD',
+  'KC_USER_BDR_PASSWORD',
+  'KC_USER_PROJECT_MANAGER_PASSWORD',
+  'KC_USER_CONSULTANT_PASSWORD',
+  'KC_USER_FINANCE_PASSWORD',
+  'KC_USER_MANAGEMENT_PASSWORD',
+];
 
 test('AC 1: realm zephyr renders with seven users, one per role', () => {
   const realm = JSON.parse(render(load('zephyr-realm.template.json'), allVars));
@@ -33,6 +42,11 @@ test('AC 1: user IDs are fixed and unique', () => {
   assert.equal(new Set(ids).size, 7);
 });
 
+test('AC 1: the seven user passwords use exactly the agreed variable names, in role order', () => {
+  const realm = JSON.parse(load('zephyr-realm.template.json'));
+  assert.deepEqual(realm.users.map((u) => u.credentials[0].value), passwordVars.map((name) => `\${${name}}`));
+});
+
 test('AC 2: admin@example.com gets the subject from ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT', () => {
   const vars = { ...allVars, ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT: '11111111-2222-4333-8444-555555555555' };
   const admin = JSON.parse(render(load('zephyr-realm.template.json'), vars)).users.find((u) => u.username === 'admin@example.com');
@@ -47,13 +61,13 @@ test('AC 3: committed templates contain no plain passwords or secrets', () => {
 });
 
 test('AC 3: rendering fails and names every missing or empty variable', () => {
-  const vars = { ...allVars, KC_USER_PM_PASSWORD: '' };
+  const vars = { ...allVars, KC_USER_PROJECT_MANAGER_PASSWORD: '' };
   delete vars.KC_USER_BDR_PASSWORD;
-  assert.throws(() => render(load('zephyr-realm.template.json'), vars), /KC_USER_BDR_PASSWORD, KC_USER_PM_PASSWORD/);
+  assert.throws(() => render(load('zephyr-realm.template.json'), vars), /KC_USER_BDR_PASSWORD, KC_USER_PROJECT_MANAGER_PASSWORD/);
 });
 
 test('AC 3: passwords with quotes stay valid JSON', () => {
-  const realm = JSON.parse(render(load('zephyr-realm.template.json'), { ...allVars, KC_USER_PM_PASSWORD: 'a"b\\c' }));
+  const realm = JSON.parse(render(load('zephyr-realm.template.json'), { ...allVars, KC_USER_PROJECT_MANAGER_PASSWORD: 'a"b\\c' }));
   assert.equal(realm.users.find((u) => u.username === 'pm@example.com').credentials[0].value, 'a"b\\c');
 });
 
@@ -66,8 +80,10 @@ test('AC 4: realm zephyr-b has its own realm name and one user', () => {
   assert.equal(b.users[0].credentials[0].value, 'value-of-KC_USER_B_PASSWORD');
 });
 
-test('.env.example lists every variable the templates need', () => {
-  const example = parseEnv(readFileSync(new URL('../.env.example', import.meta.url), 'utf8'));
+test('.env.example lists every variable the templates need and no retired role names', () => {
+  const text = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+  const example = parseEnv(text);
   for (const name of Object.keys(allVars)) assert.ok(name in example, `${name} missing from .env.example`);
   assert.equal(example.ZEPHYR_BOOTSTRAP_ADMIN_ISSUER, 'http://localhost:8180/realms/zephyr');
+  assert.doesNotMatch(text, /SALES_REP|SALES_MANAGER|APPROVER|READONLY|KC_USER_PM_PASSWORD/);
 });
