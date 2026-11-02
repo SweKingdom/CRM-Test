@@ -10,7 +10,7 @@ public sealed record FakeUser(Guid? UserId) : ICurrentUser;
 
 /// <summary>
 /// A test that needs a PostgreSQL server (ZEPHYR_TEST_DB, falling back to ZEPHYR_DB). Without one it is reported as
-/// skipped, except when ZEPHYR_REQUIRE_DB is set (CI sets it): there a missing server fails the run.
+/// skipped, except when ZEPHYR_REQUIRE_DB is 1 or true (CI sets it): there a missing server fails the run.
 /// </summary>
 public sealed class DbFactAttribute : FactAttribute
 {
@@ -38,7 +38,9 @@ public sealed class DbFixture : IAsyncLifetime
     public static string? ServerConnectionString() =>
         Environment.GetEnvironmentVariable("ZEPHYR_TEST_DB") ?? Environment.GetEnvironmentVariable("ZEPHYR_DB");
 
-    public static bool DbRequired() => Environment.GetEnvironmentVariable("ZEPHYR_REQUIRE_DB") is not null;
+    public static bool DbRequired() =>
+        Environment.GetEnvironmentVariable("ZEPHYR_REQUIRE_DB") is { } value
+        && (value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase));
 
     public async Task InitializeAsync()
     {
@@ -79,7 +81,9 @@ public sealed class DbFixture : IAsyncLifetime
         {
             DbAdapter = DbAdapter.Postgres,
             SchemasToInclude = ["public"],
-            TablesToIgnore = [new Table("__EFMigrationsHistory")]
+            // audit_log is append-only: its BEFORE DELETE trigger would make Respawn's DELETE FROM fail.
+            // The throw-away database is dropped at the end of the run, so the rows need no cleaning.
+            TablesToIgnore = [new Table("__EFMigrationsHistory"), new Table("audit_log")]
         });
     }
 

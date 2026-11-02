@@ -162,4 +162,22 @@ public class BaselineTests(DbFixture fixture) : IAsyncLifetime
 
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
     }
+
+    [DbFact]
+    public async Task Reset_between_tests_works_while_audit_log_holds_rows()
+    {
+        // Regression: Respawn's DELETE FROM must not hit the append-only trigger on audit_log.
+        await using (var db = fixture.CreateContext())
+        {
+            db.AuditLogs.Add(new AuditLog { Action = "create", EntityType = "account", EntityId = Guid.NewGuid() });
+            db.ExternalIds.Add(NewExternalId());
+            await db.SaveChangesAsync();
+        }
+
+        await fixture.ResetAsync();
+
+        await using var check = fixture.CreateContext();
+        Assert.Empty(await check.ExternalIds.ToListAsync());
+        Assert.NotEmpty(await check.AuditLogs.ToListAsync());
+    }
 }
