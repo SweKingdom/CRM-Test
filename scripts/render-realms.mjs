@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const placeholder = /\$\{([A-Za-z0-9_]+)\}/g;
+const onlyPlaceholder = /^\$\{[A-Za-z0-9_]+\}$/;
 
 export function parseEnv(text) {
   const vars = {};
@@ -15,6 +16,7 @@ export function parseEnv(text) {
     if (!match) continue;
     let value = match[2];
     if (/^(".*"|'.*')$/.test(value)) value = value.slice(1, -1);
+    else value = value.replace(/(^|\s)#.*$/, '').trim(); // inline comment, as docker compose does
     vars[match[1]] = value;
   }
   return vars;
@@ -36,15 +38,15 @@ export function render(template, vars) {
   return out;
 }
 
-// Returns the paths of credential or secret values that are not a ${VAR} placeholder.
+// Returns the paths of credential values that are not a ${VAR} placeholder.
 export function plainSecrets(node, path = '$') {
   if (Array.isArray(node)) return node.flatMap((item, i) => plainSecrets(item, `${path}[${i}]`));
   if (node === null || typeof node !== 'object') return [];
   const found = [];
-  const isCredential = node.type === 'password' && 'value' in node;
+  const isPasswordCredential = node.type === 'password' && 'value' in node;
   for (const [key, value] of Object.entries(node)) {
-    const secretField = (isCredential && key === 'value') || key === 'secret';
-    if (secretField && !/^\$\{[A-Za-z0-9_]+\}$/.test(String(value))) found.push(`${path}.${key}`);
+    const isSensitive = (isPasswordCredential && key === 'value') || key === 'secret';
+    if (isSensitive && !onlyPlaceholder.test(String(value))) found.push(`${path}.${key}`);
     else found.push(...plainSecrets(value, `${path}.${key}`));
   }
   return found;

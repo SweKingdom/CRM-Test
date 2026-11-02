@@ -71,6 +71,15 @@ test('AC 3: passwords with quotes stay valid JSON', () => {
   assert.equal(realm.users.find((u) => u.username === 'pm@example.com').credentials[0].value, 'a"b\\c');
 });
 
+test('AC 3: .env.example values stay empty, so rendering from it unfilled fails; inline comments are not values', () => {
+  const example = parseEnv(readFileSync(new URL('../.env.example', import.meta.url), 'utf8'));
+  for (const name of passwordVars) assert.equal(example[name], '', name);
+  assert.equal(example.OIDC_CLIENT_SECRET, '');
+  assert.equal(parseEnv('A=secret # note').A, 'secret');
+  assert.equal(parseEnv('A="x # y"').A, 'x # y');
+  assert.equal(parseEnv('A=pa#ss').A, 'pa#ss');
+});
+
 test('AC 4: realm zephyr-b has its own realm name and one user', () => {
   const b = JSON.parse(render(load('zephyr-realm-b.template.json'), allVars));
   const a = JSON.parse(render(load('zephyr-realm.template.json'), allVars));
