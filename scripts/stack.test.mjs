@@ -19,6 +19,8 @@ const parseEnv = (text) =>
 const compose = read("docker-compose.yml");
 const example = read(".env.example");
 const TEST_USERS = ["ADMIN", "SALESPERSON", "BDR", "PROJECT_MANAGER", "CONSULTANT", "FINANCE", "MANAGEMENT"];
+const PLACEHOLDER = "change-me";
+const isCredentialKey = (key) => /PASSWORD|SECRET/.test(key);
 
 test("AC 1: compose defines the five services with healthchecks", () => {
   for (const service of ["db", "api", "web", "keycloak", "mailpit"]) {
@@ -67,10 +69,10 @@ test("AC 3: .env is ignored, .env.example is not, and contains placeholders only
   assert.ok(ignore.includes(".env"));
   assert.ok(!ignore.some((l) => l === ".env.example" || l === ".env*"));
   const vars = parseEnv(example);
-  const secrets = Object.entries(vars).filter(([k]) => /PASSWORD|SECRET/.test(k) && k !== "ZEPHYR_DB");
-  assert.ok(secrets.length >= 10);
-  for (const [key, value] of secrets) assert.equal(value, "change-me", key);
-  assert.match(vars.ZEPHYR_DB, /Password=change-me$/);
+  const credentialEntries = Object.entries(vars).filter(([k]) => isCredentialKey(k) && k !== "ZEPHYR_DB");
+  assert.ok(credentialEntries.length >= 10);
+  for (const [key, value] of credentialEntries) assert.equal(value, PLACEHOLDER, key);
+  assert.ok(vars.ZEPHYR_DB.endsWith(`Password=${PLACEHOLDER}`));
 });
 
 test("AC 3: .env.example has one KC_USER_<ROLE>_PASSWORD per role, plus the realm-b user, and no retired names", () => {
@@ -94,13 +96,13 @@ test("AC 4: API logs JSON to stdout, reads env config, and references no cloud S
   assert.doesNotMatch(compose, /privileged|docker\.sock/);
 });
 
-test("setup-env: generates random passwords and keeps the DB password in sync", () => {
+test("setup-env: generates random values and keeps the DB credential in sync", () => {
   let n = 0;
-  const { text, generated } = renderEnv(example, () => `pw${++n}`);
+  const { text, generated } = renderEnv(example, () => `generated-${++n}`);
   const vars = parseEnv(text);
-  assert.doesNotMatch(text, /(PASSWORD|SECRET)=change-me/);
-  assert.equal(vars.POSTGRES_PASSWORD, "pw1");
-  assert.match(vars.ZEPHYR_DB, /Password=pw1$/);
+  assert.ok(!text.split(/\r?\n/).some((l) => isCredentialKey(l.split("=")[0]) && l.endsWith(`=${PLACEHOLDER}`)));
+  assert.equal(vars.POSTGRES_PASSWORD, "generated-1");
+  assert.ok(vars.ZEPHYR_DB.endsWith("Password=generated-1"));
   assert.equal(vars.ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT, parseEnv(example).ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT);
   const kc = TEST_USERS.map((r) => vars[`KC_USER_${r}_PASSWORD`]);
   assert.ok(kc.every(Boolean));
