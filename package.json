@@ -1,0 +1,17 @@
+{
+  "name": "zephyr-crm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zephyr CRM, local edition: tooling skeleton (realm rendering). Later stories extend it.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "node --check scripts/render-realms.mjs && node --check scripts/lint.mjs",
+    "lint": "node scripts/lint.mjs",
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "build": "node --check scripts/render-realms.mjs",
+    "render-realms": "node scripts/render-realms.mjs"
+  }
+}
