@@ -1,0 +1,15 @@
+{
+  "name": "zephyr",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup-env": "node scripts/setup-env.mjs",
+    "typecheck": "node --check scripts/setup-env.mjs && node --check scripts/stack.test.mjs",
+    "lint": "node --check scripts/setup-env.mjs",
+    "test": "node --test scripts/stack.test.mjs",
+    "build": "node -e \"console.log('Images are built by: docker compose build')\""
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

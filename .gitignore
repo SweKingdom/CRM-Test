@@ -1,2 +1,9 @@
 .DS_Store
 node_modules/
+bin/
+obj/
+dist/
+
+# Secrets and generated files: never commit
+.env
+generated/
