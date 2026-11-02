@@ -3,3 +3,4 @@ node_modules/
 bin/
 obj/
 .env
+infra/keycloak/generated/

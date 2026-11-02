@@ -37,3 +37,19 @@ Extensions: `pg_trgm` and `unaccent` via `CREATE EXTENSION IF NOT EXISTS`.
 **Rollback:** `Down()` drops `external_id` and `audit_log`; extensions remain.
 
 **Open items:** model snapshot is hand-written; `dotnet ef migrations has-pending-model-changes` to be run in CI (US-132). DB tests first execute in CI with a postgres:16 service container (US-132).
+
+## Local identity (Keycloak)
+
+Keycloak stands in for Entra locally. It runs in dev mode on localhost only.
+
+| Item | Value |
+|---|---|
+| Realm `zephyr` | Issuer `http://localhost:8180/realms/zephyr`; client `zephyr-web` (confidential, PKCE S256, standard flow) |
+| Realm `zephyr-b` | Issuer `http://localhost:8180/realms/zephyr-b`; one user `user-b@example.com`, used for the switch-by-configuration test |
+| Users | Seven in `zephyr`, one per role. Fixed UUIDs keep subjects stable across rebuilds. |
+| Admin subject | `admin@example.com` has the `id` from `ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT` |
+
+- Templates: `infra/keycloak/zephyr-realm.template.json` and `zephyr-realm-b.template.json` (committed, placeholders only).
+- Rendering: `scripts/render-realms.mjs` writes `infra/keycloak/generated/*.json` (gitignored). The `.sh` and `.ps1` wrappers call it. It fails if a variable is missing.
+- Import: the keycloak service mounts `generated/` at `/opt/keycloak/data/import` and runs `start-dev --import-realm`.
+- Zephyr stores no passwords. Roles are not mapped into tokens; they live in `app_user`.
