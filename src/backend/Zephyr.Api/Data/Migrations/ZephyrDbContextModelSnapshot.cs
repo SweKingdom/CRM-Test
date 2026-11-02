@@ -18,6 +18,92 @@ partial class ZephyrDbContextModelSnapshot : ModelSnapshot
 
         NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+        modelBuilder.Entity("Zephyr.Api.Data.AppUser", b =>
+        {
+            b.Property<Guid>("Id")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("uuid")
+                .HasColumnName("id")
+                .HasDefaultValueSql("gen_random_uuid()");
+
+            b.Property<bool>("Active")
+                .HasColumnType("boolean")
+                .HasColumnName("active");
+
+            b.Property<DateTime>("CreatedAt")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("CreatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("created_by");
+
+            b.Property<string>("Custom")
+                .IsRequired()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("jsonb")
+                .HasColumnName("custom")
+                .HasDefaultValueSql("'{}'::jsonb");
+
+            b.Property<DateTime?>("DeletedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("deleted_at");
+
+            b.Property<string>("Email")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("email");
+
+            b.Property<string>("HomeCountry")
+                .HasColumnType("character(2)")
+                .HasColumnName("home_country");
+
+            b.Property<string>("Issuer")
+                .HasColumnType("text")
+                .HasColumnName("issuer");
+
+            b.Property<DateTime?>("LastLoginAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("last_login_at");
+
+            b.Property<string>("Name")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("name");
+
+            b.Property<string[]>("Roles")
+                .IsRequired()
+                .HasColumnType("text[]")
+                .HasColumnName("roles");
+
+            b.Property<string>("Subject")
+                .HasColumnType("text")
+                .HasColumnName("subject");
+
+            b.Property<DateTime>("UpdatedAt")
+                .IsConcurrencyToken()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("updated_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("UpdatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("updated_by");
+
+            b.HasKey("Id")
+                .HasName("pk_app_user");
+
+            b.HasIndex("Issuer", "Subject")
+                .IsUnique()
+                .HasDatabaseName("ux_app_user_issuer_subject")
+                .HasFilter("issuer is not null and subject is not null");
+
+            b.ToTable("app_user", (string)null);
+        });
+
         modelBuilder.Entity("Zephyr.Api.Data.AuditLog", b =>
         {
             b.Property<Guid>("Id")
