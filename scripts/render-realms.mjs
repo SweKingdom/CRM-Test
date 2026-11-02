@@ -1,6 +1,6 @@
 // Renders infra/keycloak/*.template.json to infra/keycloak/generated/*.json,
 // replacing ${VAR} placeholders with values from .env (or the process environment).
-// Fails without writing anything when a variable is missing or empty.
+// Fails without writing anything when a variable is missing, empty or still the `change-me` placeholder.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const placeholder = /\$\{([A-Za-z0-9_]+)\}/g;
 const onlyPlaceholder = /^\$\{[A-Za-z0-9_]+\}$/;
+const unfilled = (value) => !value || value === 'change-me';
 
 export function parseEnv(text) {
   const vars = {};
@@ -25,7 +26,7 @@ export function parseEnv(text) {
 export function render(template, vars) {
   const missing = new Set();
   const out = template.replace(placeholder, (_, name) => {
-    if (!vars[name]) {
+    if (unfilled(vars[name])) {
       missing.add(name);
       return '';
     }
@@ -33,7 +34,7 @@ export function render(template, vars) {
     return JSON.stringify(vars[name]).slice(1, -1);
   });
   if (missing.size > 0) {
-    throw new Error(`Missing values in .env: ${[...missing].sort().join(', ')}. Copy .env.example to .env and fill them in.`);
+    throw new Error(`Missing values in .env: ${[...missing].sort().join(', ')}. Run node scripts/setup-env.mjs or fill them in.`);
   }
   return out;
 }
@@ -53,9 +54,9 @@ export function plainSecrets(node, path = '$') {
 }
 
 export function renderAll(envFile = join(root, '.env')) {
-  if (!existsSync(envFile)) throw new Error(`${envFile} not found. Copy .env.example to .env and fill it in.`);
+  if (!existsSync(envFile)) throw new Error(`${envFile} not found. Run node scripts/setup-env.mjs to create it.`);
   const vars = { ...parseEnv(readFileSync(envFile, 'utf8')) };
-  for (const [key, value] of Object.entries(process.env)) if (value && !vars[key]) vars[key] = value;
+  for (const [key, value] of Object.entries(process.env)) if (value && unfilled(vars[key])) vars[key] = value;
   const dir = join(root, 'infra', 'keycloak');
   const outputs = readdirSync(dir)
     .filter((name) => name.endsWith('.template.json'))

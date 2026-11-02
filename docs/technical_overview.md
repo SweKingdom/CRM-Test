@@ -53,3 +53,21 @@ Keycloak stands in for Entra locally. It runs in dev mode on localhost only.
 - Rendering: `scripts/render-realms.mjs` writes `infra/keycloak/generated/*.json` (gitignored). The `.sh` and `.ps1` wrappers call it. It fails if a variable is missing.
 - Import: the keycloak service mounts `generated/` at `/opt/keycloak/data/import` and runs `start-dev --import-realm`.
 - Zephyr stores no passwords. Roles are not mapped into tokens; they live in `app_user`.
+
+## Local stack (Docker Compose)
+
+| Service | Image | Ports (127.0.0.1) | Healthcheck |
+|---|---|---|---|
+| db | postgres:16 | 5432 | pg_isready |
+| api | built from src/backend/Zephyr.Api/Dockerfile | 8080 | GET /health |
+| web | built from src/frontend/Dockerfile | 3000 | HTTP GET / |
+| keycloak | quay.io/keycloak/keycloak (pinned 26.0.7) | 8180 to 8080 | /health/ready on 9000 |
+| mailpit | axllent/mailpit (pinned v1.21) | 1025 SMTP, 8025 UI | /livez |
+
+- One Compose network and one named volume (`pgdata`).
+- The API depends on a healthy db. Migrations run at API start (US-129).
+- Configuration comes only from `.env` (created by `scripts/setup-env.mjs` from `.env.example`). `.env` and `generated/` are gitignored.
+- `/health` is anonymous. It returns 200 when `SELECT 1` on the database succeeds, otherwise 503. It exposes no versions or secrets.
+- Logs go to stdout as JSON lines.
+- Compose uses no Docker-only features, so it also runs on Podman and Rancher Desktop.
+- Status: code complete. The first real `docker compose up` is pending.
