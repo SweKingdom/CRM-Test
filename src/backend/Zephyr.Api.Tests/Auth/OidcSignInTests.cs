@@ -110,6 +110,16 @@ public class OidcSignInTests(DbFixture fixture) : IAsyncLifetime
             Entries.Add((logLevel, formatter(state, exception)));
     }
 
+    /// <summary>These tests are about sign-in and CSRF, not the status recheck (SessionTests), so every session user counts as active.</summary>
+    private sealed class AlwaysActive : IUserStatus
+    {
+        public Task<bool> IsActiveAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(true);
+
+        public void Forget(Guid userId)
+        {
+        }
+    }
+
     /// <summary>The claims the OIDC handler hands over after validating an id token (MapInboundClaims off).</summary>
     private static ClaimsPrincipal External(string subject, string? email = null, bool? verified = null, string issuer = Issuer)
     {
@@ -378,6 +388,7 @@ public class OidcSignInTests(DbFixture fixture) : IAsyncLifetime
         builder.Configuration.AddInMemoryCollection(settings.Select(s => new KeyValuePair<string, string?>(s.Key, s.Value)));
         builder.Services.AddApiConventions();
         builder.AddZephyrAuth();
+        builder.Services.AddScoped<IUserStatus, AlwaysActive>();
         var app = builder.Build();
         app.UseApiConventions();
         app.UseZephyrAuth();
@@ -407,10 +418,9 @@ public class OidcSignInTests(DbFixture fixture) : IAsyncLifetime
         user ??= new AppUser { Id = Guid.NewGuid(), Name = "Pat", Email = "pat@example.com", Issuer = Issuer, Roles = ["Salesperson"] };
         var options = app.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>().Get(AuthModule.CookieScheme);
         var now = DateTimeOffset.UtcNow;
-        var ticket = new AuthenticationTicket(
-            UserMatching.ToPrincipal(user),
-            new AuthenticationProperties { IssuedUtc = now, ExpiresUtc = now.AddHours(1) },
-            AuthModule.CookieScheme);
+        var properties = new AuthenticationProperties { IssuedUtc = now, ExpiresUtc = now.AddHours(1) };
+        SessionRules.Stamp(properties, now);
+        var ticket = new AuthenticationTicket(UserMatching.ToPrincipal(user), properties, AuthModule.CookieScheme);
         return $"{options.Cookie.Name}={options.TicketDataFormat.Protect(ticket)}";
     }
 
@@ -550,7 +560,10 @@ public class OidcSignInTests(DbFixture fixture) : IAsyncLifetime
         var accepted = await client.SendAsync(Request("POST", "/auth/logout", cookie, csrf: true));
 
         await AssertProblem(rejected, HttpStatusCode.Forbidden, ErrorCodes.CsrfRejected);
-        Assert.False(rejected.Headers.Contains("Set-Cookie"));
+        // A valid session is renewed on every request (US-141), so the rejected call may carry a fresh cookie; it must not clear it.
+        Assert.DoesNotContain(
+            rejected.Headers.TryGetValues("Set-Cookie", out var rejectedCookies) ? rejectedCookies : [],
+            v => v.StartsWith("zephyr.session=;"));
         Assert.Equal(HttpStatusCode.NoContent, accepted.StatusCode);
         Assert.Contains(accepted.Headers.GetValues("Set-Cookie"), v => v.StartsWith("zephyr.session=;"));
     }

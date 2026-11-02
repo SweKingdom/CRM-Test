@@ -31,6 +31,7 @@ builder.Services.AddHealthChecks().AddNpgSql(_ => ZephyrDbContext.ConnectionStri
 var app = builder.Build();
 app.UseApiConventions();
 app.UseZephyrAuth();
+app.MapUsersEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {
