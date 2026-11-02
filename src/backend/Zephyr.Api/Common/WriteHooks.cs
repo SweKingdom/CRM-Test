@@ -44,11 +44,11 @@ public static class WriteHooks
     }
 
     /// <summary>Reads the JSON object body; malformed JSON or a non-object body is a 400.</summary>
-    public static async Task<JsonElement> ReadBodyAsync(HttpRequest request, CancellationToken cancellationToken = default)
+    public static async Task<JsonElement> ReadBodyAsync(HttpRequest request, CancellationToken ct = default)
     {
         try
         {
-            using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: cancellationToken);
+            using var document = await JsonDocument.ParseAsync(request.Body, default, ct);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
                 throw Problems.BadRequest(ErrorCodes.Validation, "body", "The request body must be a JSON object.");

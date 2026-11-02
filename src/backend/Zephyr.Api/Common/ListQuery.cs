@@ -203,7 +203,7 @@ public sealed class ListQuery<T>
 
     private object?[]? After { get; init; }
 
-    private sealed record CursorToken(string Sort, string[] Values);
+    private sealed record CursorPayload(string Sort, string[] Values);
 
     public static ListQuery<T> Parse(IQueryCollection query, ListSpec<T> spec)
     {
@@ -247,7 +247,7 @@ public sealed class ListQuery<T>
     }
 
     /// <summary>Applies filters, order and the cursor to <paramref name="source"/> and reads one page.</summary>
-    public async Task<ListPage<T>> ToPageAsync(IQueryable<T> source, CancellationToken cancellationToken = default)
+    public async Task<ListPage<T>> ToPageAsync(IQueryable<T> source, CancellationToken ct = default)
     {
         var row = Expression.Parameter(typeof(T), "e");
         var conditions = Filters.Select(filter => FilterPredicate(row, filter)).ToList();
@@ -268,7 +268,7 @@ public sealed class ListQuery<T>
             ordered = OrderBy(ordered ?? query, key, ordered is null);
         }
 
-        var rows = await ordered!.Take(Limit + 1).ToListAsync(cancellationToken);
+        var rows = await ordered!.Take(Limit + 1).ToListAsync(ct);
         if (rows.Count <= Limit)
         {
             return new ListPage<T>(rows, null);
@@ -383,7 +383,7 @@ public sealed class ListQuery<T>
     private string EncodeCursor(T last)
     {
         var values = Sort.Select(s => ListValues.Format(s.Property.GetValue(last)!)).ToArray();
-        return WebEncoders.Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(new CursorToken(Signature(Sort), values), ListValues.Json));
+        return WebEncoders.Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(new CursorPayload(Signature(Sort), values), ListValues.Json));
     }
 
     /// <summary>A cursor that is not base64url JSON, was made for another sort, or holds a bad value is a 400.</summary>
@@ -392,8 +392,8 @@ public sealed class ListQuery<T>
         object?[]? values = null;
         try
         {
-            var token = JsonSerializer.Deserialize<CursorToken>(WebEncoders.Base64UrlDecode(cursor), ListValues.Json);
-            if (token?.Values is { } raw && token.Sort == Signature(sort) && raw.Length == sort.Count)
+            var payload = JsonSerializer.Deserialize<CursorPayload>(WebEncoders.Base64UrlDecode(cursor), ListValues.Json);
+            if (payload?.Values is { } raw && payload.Sort == Signature(sort) && raw.Length == sort.Count)
             {
                 var parsed = new object?[raw.Length];
                 var ok = true;
