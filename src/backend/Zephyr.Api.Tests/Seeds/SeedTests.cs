@@ -4,7 +4,7 @@ using Zephyr.Api.Tests.Support;
 
 namespace Zephyr.Api.Tests.Seeds;
 
-/// <summary>AC 1-4 of US-130 against the migrated test database. Runs scripts/seed.mjs with Node.</summary>
+/// <summary>AC 1-4 of US-130 and the exchange-rate seed of US-134 against the migrated test database. Runs scripts/seed.mjs with Node.</summary>
 [Collection("db")]
 public class SeedTests(DbFixture db) : IAsyncLifetime
 {
@@ -13,7 +13,7 @@ public class SeedTests(DbFixture db) : IAsyncLifetime
     private static readonly string[] AllTables =
     {
         "stage", "close_outcome", "close_reason", "call_outcome", "time_type",
-        "country", "currency", "meddpicc_element", "account",
+        "country", "currency", "meddpicc_element", "account", "exchange_rate",
     };
 
     public Task InitializeAsync() => db.ResetAsync();
@@ -117,5 +117,25 @@ public class SeedTests(DbFixture db) : IAsyncLifetime
         Seed();
         Assert.Equal("Edited Name", Scalar<string>($"select name from account where id = '{EkdalId}'"));
         Assert.Equal(3, Rows("account"));
+    }
+
+    [DbFact]
+    public void US134_ExchangeRates_AreSeededForEveryMonthWithTheFixedRates_AndAdminEditsSurviveAReseed()
+    {
+        Seed();
+        // Five currencies (SEK is implicit) x 132 months (2020-01 to 2030-12).
+        Assert.Equal(5 * 132, Rows("exchange_rate"));
+        Assert.Equal(0, Rows("exchange_rate where currency = 'SEK'"));
+        Assert.Equal(
+            "AED=2.720000,EUR=11.000000,GBP=12.800000,NOK=0.950000,USD=10.000000",
+            Scalar<string>(
+                "select string_agg(currency || '=' || rate_to_sek::text, ',' order by currency) " +
+                "from exchange_rate where month = date '2026-11-01'"));
+
+        Scalar<int>("with u as (update exchange_rate set rate_to_sek = 9.5 where currency = 'USD' and month = date '2026-11-01' returning 1) select count(*)::int from u");
+        Seed();
+
+        Assert.Equal(9.5m, Scalar<decimal>("select rate_to_sek from exchange_rate where currency = 'USD' and month = date '2026-11-01'"));
+        Assert.Equal(5 * 132, Rows("exchange_rate"));
     }
 }

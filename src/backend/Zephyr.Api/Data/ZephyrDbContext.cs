@@ -35,6 +35,24 @@ public class ExternalId : IEntity
     public string Value { get; set; } = "";
 }
 
+/// <summary>SEK per unit of a currency in one month (US-134). SEK itself has no row: its rate is always 1.</summary>
+public class ExchangeRate : IEntity
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public Guid? UpdatedBy { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string Custom { get; set; } = "{}";
+    public string Currency { get; set; } = "";
+
+    /// <summary>First day of the month the rate applies to.</summary>
+    public DateOnly Month { get; set; }
+
+    public decimal RateToSek { get; set; }
+}
+
 /// <summary>Append-only record of who did what (enforced by a database trigger).</summary>
 public class AuditLog
 {
@@ -50,6 +68,7 @@ public class AuditLog
 public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbContext(options)
 {
     public DbSet<ExternalId> ExternalIds => Set<ExternalId>();
+    public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     public static string ConnectionStringFromEnvironment() =>
@@ -87,6 +106,20 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
             e.ToTable("external_id", t => t.HasCheckConstraint("ck_external_id_system", "\"system\" IN ('dynamics', 'fortnox')"));
             e.HasIndex(x => new { x.System, x.EntityType, x.Value }).IsUnique().HasDatabaseName("ux_external_id_system_entity_type_value");
             e.HasIndex(x => new { x.EntityType, x.EntityId }).HasDatabaseName("ix_external_id_entity_type_entity_id");
+        });
+
+        modelBuilder.Entity<ExchangeRate>(e =>
+        {
+            e.ToTable("exchange_rate", t =>
+            {
+                t.HasCheckConstraint("ck_exchange_rate_currency", "currency <> 'SEK'");
+                t.HasCheckConstraint("ck_exchange_rate_month", "date_trunc('month', month::timestamp) = month::timestamp");
+                t.HasCheckConstraint("ck_exchange_rate_rate", "rate_to_sek > 0");
+            });
+            e.Property(x => x.Currency).HasColumnType("char(3)");
+            e.Property(x => x.Month).HasColumnType("date");
+            e.Property(x => x.RateToSek).HasColumnType("numeric(18,6)");
+            e.HasIndex(x => new { x.Currency, x.Month }).IsUnique().HasDatabaseName("ux_exchange_rate_currency_month");
         });
 
         modelBuilder.Entity<AuditLog>(e =>
