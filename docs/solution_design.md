@@ -195,3 +195,26 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - Lead source and close-reason seed values unconfirmed (medium/low): take from seed files.
 - 3-click target unconfirmed by F23 (medium/low): manual usability check.
 - Call list p95 on Friday peak (low/medium): index + benchmark seed.
+
+## Opportunity pipeline, stage gates and MEDDPICC (FT-116)
+
+**Modules:** `Zephyr.Api/Opportunities/OpportunityEndpoints.cs` (CRUD, stage change, close; split to `OpportunityClose.cs`/`StageEndpoints.cs` only if >300 lines); frontend `pages/OpportunityBoard.tsx`, `components/{OpportunityForm,MeddpiccCard,StageGateDialog,CloseOpportunityDialog}.tsx`, `lib/opportunities.ts`. Stories: US-156 (model/stages/CRUD), US-157 (MEDDPICC + gate), US-158 (close outcomes/history), US-159 (board).
+
+**Data model:** `stage` (key PK, label, sort_order, exit_criteria jsonb, is_terminal, outcome); `opportunity` (account_id and stage_key required, money convention, owner, forecast category, expected_close_date, closed_outcome/closed_reason_key/competitor/closed_at, custom fields, standard conventions + ETag); `meddpicc_element` (8 rows per opportunity, unique(opportunity_id, element), status unknown/identified/validated); `stage_transition_log` (append-only, override_reason, missing jsonb); `close_reason` (seeded, per outcome); `close_date_history` (append-only). Stored by `stage_key` so label renames need no migration.
+
+**API:** `/api/v1/opportunities` CRUD (ETag/If-Match, filters stage/owner/close date/closedAt), `/api/v1/stages`, `GET|PUT /{id}/meddpicc[/{element}]`, `POST /{id}:change-stage`, `POST /{id}:close`, `POST /{id}:reopen`. Errors RFC 9457: 422 validation (gate problem carries `missing[]`), 409 closed, 412/428 ETag, 403 permission.
+
+**Security:** FT-112 scope predicate + opportunity permissions; reopen is Admin-only (assumption); logs are append-only and written server-side in the same transaction; client never evaluates gates.
+
+**Decisions**
+- Stage metadata in table with `exit_criteria` jsonb · rename/config without deploy, workshop (Open decision 21) changes only seeds · alternative: enum in code.
+- Terminal outcomes modelled as terminal stages + `closed_outcome` · board and filters use one field · alternative: separate status column.
+- Stage changes only via `:change-stage`/`:close`, PATCH rejects them · single place for gate and log.
+- Board groups client-side from the list endpoint (cap 500) · fewer endpoints · alternative `/opportunities/board`.
+- Won validation is a hook owned by the handover story; US-158 enforces only reason.
+
+**Risks**
+- Stage set and default exit criteria unconfirmed (high likelihood/medium impact): seed-only change.
+- Forecast category values and reopen target stage are assumptions (medium/low): confirm with PO.
+- Board p95 ≤2 s (low/medium): index + benchmark seed.
+- Lead conversion (US-155) needs the opportunity table and MEDDPICC row helper: sequence US-156 → US-157 → US-155.
