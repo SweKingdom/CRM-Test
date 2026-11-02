@@ -7,3 +7,4 @@ dist/
 # Secrets and generated files: never commit
 .env
 generated/
+infra/keycloak/generated/

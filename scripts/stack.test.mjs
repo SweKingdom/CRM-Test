@@ -30,6 +30,12 @@ test("AC 1: compose defines the five services with healthchecks", () => {
   assert.match(compose, /127\.0\.0\.1:8080:8080/);
 });
 
+test("AC 1: keycloak imports the rendered realms read-only", () => {
+  assert.match(compose, /\.\/infra\/keycloak\/generated:\/opt\/keycloak\/data\/import:ro/);
+  assert.match(compose, /--import-realm/);
+  assert.match(read(".gitignore"), /^infra\/keycloak\/generated\/$/m);
+});
+
 test("AC 1: frontend image uses npm ci when a lockfile exists, npm install otherwise", () => {
   const dockerfile = read("src/frontend/Dockerfile");
   assert.match(dockerfile, /COPY package\.json package-lock\.json\* \.\//);
@@ -61,20 +67,21 @@ test("AC 3: .env is ignored, .env.example is not, and contains placeholders only
   assert.ok(ignore.includes(".env"));
   assert.ok(!ignore.some((l) => l === ".env.example" || l === ".env*"));
   const vars = parseEnv(example);
-  const secrets = Object.entries(vars).filter(([k]) => /PASSWORD|SECRET|SUBJECT/.test(k) && k !== "ZEPHYR_DB");
+  const secrets = Object.entries(vars).filter(([k]) => /PASSWORD|SECRET/.test(k) && k !== "ZEPHYR_DB");
   assert.ok(secrets.length >= 10);
   for (const [key, value] of secrets) assert.equal(value, "change-me", key);
   assert.match(vars.ZEPHYR_DB, /Password=change-me$/);
 });
 
-test("AC 3: .env.example has one KC_USER_<ROLE>_PASSWORD per role and no other test users", () => {
-  const names = Object.keys(parseEnv(example)).filter((k) => /^KC_USER_/.test(k));
+test("AC 3: .env.example has one KC_USER_<ROLE>_PASSWORD per role, plus the realm-b user, and no retired names", () => {
+  const names = Object.keys(parseEnv(example)).filter((k) => /^KC_USER_/.test(k) && k !== "KC_USER_B_PASSWORD");
   assert.deepEqual(names.sort(), TEST_USERS.map((r) => `KC_USER_${r}_PASSWORD`).sort());
+  assert.doesNotMatch(example, /SALES_REP|SALES_MANAGER|APPROVER|READONLY/);
 });
 
 test("AC 3: every variable compose interpolates is listed in .env.example", () => {
   const vars = parseEnv(example);
-  for (const [, name] of compose.matchAll(/(?<!\$)\$\{(\w+)\}/g)) {
+  for (const [, name] of compose.matchAll(/(?<!\$)\$\{(\w+)(?::\?[^}]*)?\}/g)) {
     assert.ok(name in vars, `${name} missing from .env.example`);
   }
 });
@@ -94,11 +101,12 @@ test("setup-env: generates random passwords and keeps the DB password in sync", 
   assert.doesNotMatch(text, /(PASSWORD|SECRET)=change-me/);
   assert.equal(vars.POSTGRES_PASSWORD, "pw1");
   assert.match(vars.ZEPHYR_DB, /Password=pw1$/);
-  assert.equal(vars.ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT, "change-me");
+  assert.equal(vars.ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT, parseEnv(example).ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT);
   const kc = TEST_USERS.map((r) => vars[`KC_USER_${r}_PASSWORD`]);
   assert.ok(kc.every(Boolean));
   assert.equal(new Set(kc).size, 7);
-  assert.ok(generated.includes("KEYCLOAK_ADMIN_PASSWORD"));
+  assert.ok(generated.includes("KC_BOOTSTRAP_ADMIN_PASSWORD"));
+  assert.ok(generated.includes("KC_USER_B_PASSWORD"));
   for (const r of TEST_USERS) assert.ok(generated.includes(`KC_USER_${r}_PASSWORD`), r);
 });
 

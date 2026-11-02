@@ -1,9 +1,10 @@
-// Creates .env from .env.example with random passwords. Never overwrites an existing .env.
-// Usage: node scripts/setup-env.mjs
+// Creates .env from .env.example with random passwords and renders the Keycloak realm files.
+// Never overwrites an existing .env. Usage: node scripts/setup-env.mjs
 import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { renderAll } from "./render-realms.mjs";
 
 const PLACEHOLDER = "change-me";
 const isSecretKey = (key) => /PASSWORD|SECRET/.test(key);
@@ -54,5 +55,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   } else {
     console.log(`Created .env with ${generated.length} generated passwords.`);
     console.log("Find the test-user passwords (KC_USER_*_PASSWORD) and admin passwords in .env. Do not commit it.");
+  }
+  try {
+    const files = renderAll(join(root, ".env"));
+    console.log(`Rendered ${files.length} Keycloak realm file(s) to infra/keycloak/generated/.`);
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
   }
 }

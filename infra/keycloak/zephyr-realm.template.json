@@ -1,0 +1,98 @@
+{
+  "realm": "zephyr",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "clients": [
+    {
+      "clientId": "zephyr-web",
+      "name": "Zephyr web",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${OIDC_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:8080/*"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "id": "${ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT}",
+      "username": "admin@example.com",
+      "email": "admin@example.com",
+      "firstName": "Admin",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${KC_USER_ADMIN_PASSWORD}", "temporary": false }]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "username": "salesperson@example.com",
+      "email": "salesperson@example.com",
+      "firstName": "Sales",
+      "lastName": "Person",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${KC_USER_SALESPERSON_PASSWORD}", "temporary": false }]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "username": "bdr@example.com",
+      "email": "bdr@example.com",
+      "firstName": "Business",
+      "lastName": "Developer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${KC_USER_BDR_PASSWORD}", "temporary": false }]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "username": "pm@example.com",
+      "email": "pm@example.com",
+      "firstName": "Project",
+      "lastName": "Manager",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${KC_USER_PROJECT_MANAGER_PASSWORD}", "temporary": false }]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "username": "consultant@example.com",
+      "email": "consultant@example.com",
+      "firstName": "Con",
+      "lastName": "Sultant",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${KC_USER_CONSULTANT_PASSWORD}", "temporary": false }]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "username": "finance@example.com",
+      "email": "finance@example.com",
+      "firstName": "Fin",
+      "lastName": "Ance",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${KC_USER_FINANCE_PASSWORD}", "temporary": false }]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000007",
+      "username": "management@example.com",
+      "email": "management@example.com",
+      "firstName": "Man",
+      "lastName": "Agement",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${KC_USER_MANAGEMENT_PASSWORD}", "temporary": false }]
+    }
+  ]
+}

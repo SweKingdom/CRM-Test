@@ -64,10 +64,13 @@ services:
     command: ["start-dev", "--import-realm"]
     environment:
       KC_HEALTH_ENABLED: "true"
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?set in .env}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?set in .env}
     ports:
       - "127.0.0.1:8180:8080"
+    volumes:
+      # Rendered from infra/keycloak/*.template.json by scripts/setup-env.mjs (gitignored).
+      - ./infra/keycloak/generated:/opt/keycloak/data/import:ro
     healthcheck:
       # Health endpoints are served on the management port 9000 (not published).
       test:
