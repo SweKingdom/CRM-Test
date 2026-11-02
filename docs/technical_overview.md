@@ -71,3 +71,32 @@ Keycloak stands in for Entra locally. It runs in dev mode on localhost only.
 - Logs go to stdout as JSON lines.
 - Compose uses no Docker-only features, so it also runs on Podman and Rancher Desktop.
 - Status: code complete. The first real `docker compose up` is pending.
+
+## Reference data and seeds (US-130)
+
+**Migration `0002_ReferenceData`** (raw SQL, no model snapshot change) creates the reference tables. Every reference table has `key text unique`, `label text`, `sort_order int`, `active bool default true`.
+
+| Table | Extra columns |
+|---|---|
+| stage | `is_terminal`, `exit_criteria jsonb null` |
+| close_outcome | `maps_to_stage` (Won, Lost, NoDecision, Disqualified) |
+| close_reason | `outcome_key` FK to close_outcome.key |
+| call_outcome | `counts_as_contact` |
+| time_type | `billable_default`, `requires_project`, `allows_future`, `category` (client, internal, absence) |
+| country | `iso2 char(2) unique` (key = iso2) |
+| currency | `iso3 char(3) unique`, `decimals int default 2` |
+| meddpicc_element | none |
+| account (minimal) | `name`, `country_code char(2) null`; unique index on `lower(name)` |
+
+**Seed files** (applied in filename order by `scripts/seed.mjs`, one transaction per file):
+- `Seed/0001_reference_data.sql`: reference rows, `ON CONFLICT (key) DO UPDATE`. Changes reach existing databases without a reset.
+- `Seed/0002_demo_accounts.sql`: three demo accounts with fixed UUIDs, `ON CONFLICT (id) DO NOTHING`.
+- No seed-tracking table is used.
+
+**Command:** `npm run seed` (`node scripts/seed.mjs`). Connection from `DATABASE_URL` or `.env`. Dependencies: `pg`, `dotenv`.
+
+**Validation:** `python3 scripts/validate_seeds.py [dir]` (stdlib only). Checks: sequential `NNNN_*.sql` names, no DELETE/DROP/TRUNCATE, ON CONFLICT on every INSERT, DO UPDATE for reference files and DO NOTHING for demo files, row counts per set (9/11/6/6/7/8), no email or phone outside `example.com`. Exit 1 prints `file:line reason`.
+
+**Tests:** `SeedTests.cs` (AC 1–4) needs `ZEPHYR_TEST_DB`; CI sets `ZEPHYR_REQUIRE_DB=1`. `tests/seeds.test.mjs` covers AC 5 using `tests/seeds_broken/`.
+
+**Not in this story:** exchange rates (US-134), volume seed set (US-131).
