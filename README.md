@@ -19,7 +19,19 @@ docker compose up --build
 | Mailpit (caught mail) | http://localhost:8025 (SMTP on localhost:1025) |
 | PostgreSQL | localhost:5432 |
 
-All ports are bound to 127.0.0.1. Generated passwords (including the Keycloak test users, `KC_USER_*_PASSWORD`) are in `.env`, which is gitignored. `.env.example` lists every variable with placeholders only.
+All ports are bound to 127.0.0.1. Generated passwords are in `.env`, which is gitignored. `.env.example` lists every variable with placeholders only.
+
+Keycloak test users, one per role, each with a generated password in `.env`:
+
+| Variable | Role |
+|---|---|
+| `KC_USER_ADMIN_PASSWORD` | Admin |
+| `KC_USER_SALESPERSON_PASSWORD` | Salesperson / opportunity owner |
+| `KC_USER_BDR_PASSWORD` | Business development rep |
+| `KC_USER_PROJECT_MANAGER_PASSWORD` | Project manager / approver |
+| `KC_USER_CONSULTANT_PASSWORD` | Consultant |
+| `KC_USER_FINANCE_PASSWORD` | Finance |
+| `KC_USER_MANAGEMENT_PASSWORD` | Management / leadership |
 
 Check that it works:
 

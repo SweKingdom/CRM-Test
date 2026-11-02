@@ -18,6 +18,7 @@ const parseEnv = (text) =>
 
 const compose = read("docker-compose.yml");
 const example = read(".env.example");
+const TEST_USERS = ["ADMIN", "SALESPERSON", "BDR", "PROJECT_MANAGER", "CONSULTANT", "FINANCE", "MANAGEMENT"];
 
 test("AC 1: compose defines the five services with healthchecks", () => {
   for (const service of ["db", "api", "web", "keycloak", "mailpit"]) {
@@ -26,6 +27,13 @@ test("AC 1: compose defines the five services with healthchecks", () => {
   assert.equal((compose.match(/healthcheck:/g) ?? []).length, 5);
   assert.match(read("src/backend/Zephyr.Api/Program.cs"), /MapHealthChecks\("\/health"/);
   assert.match(compose, /127\.0\.0\.1:8080:8080/);
+});
+
+test("AC 1: frontend image installs with npm ci from a committed lockfile only", () => {
+  const dockerfile = read("src/frontend/Dockerfile");
+  assert.match(dockerfile, /^RUN npm ci$/m);
+  assert.doesNotMatch(dockerfile, /npm install/);
+  assert.ok(existsSync(join(root, "src/frontend/package-lock.json")), "src/frontend/package-lock.json missing");
 });
 
 test("AC 2: mail is caught by Mailpit and no relay is configured", () => {
@@ -52,7 +60,11 @@ test("AC 3: .env is ignored, .env.example is not, and contains placeholders only
   assert.ok(secrets.length >= 10);
   for (const [key, value] of secrets) assert.equal(value, "change-me", key);
   assert.match(vars.ConnectionStrings__Default, /Password=change-me$/);
-  assert.equal(Object.keys(vars).filter((k) => /^KC_USER_.*_PASSWORD$/.test(k)).length, 7);
+});
+
+test("AC 3: .env.example has one KC_USER_<ROLE>_PASSWORD per role and no other test users", () => {
+  const names = Object.keys(parseEnv(example)).filter((k) => /^KC_USER_/.test(k));
+  assert.deepEqual(names.sort(), TEST_USERS.map((r) => `KC_USER_${r}_PASSWORD`).sort());
 });
 
 test("AC 3: every variable compose interpolates is listed in .env.example", () => {
@@ -78,11 +90,11 @@ test("setup-env: generates random passwords and keeps the DB password in sync", 
   assert.equal(vars.POSTGRES_PASSWORD, "pw1");
   assert.match(vars.ConnectionStrings__Default, /Password=pw1$/);
   assert.equal(vars.ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT, "change-me");
-  const kc = Object.entries(vars)
-    .filter(([k]) => /^KC_USER_/.test(k))
-    .map(([, v]) => v);
+  const kc = TEST_USERS.map((r) => vars[`KC_USER_${r}_PASSWORD`]);
+  assert.ok(kc.every(Boolean));
   assert.equal(new Set(kc).size, 7);
   assert.ok(generated.includes("KEYCLOAK_ADMIN_PASSWORD"));
+  for (const r of TEST_USERS) assert.ok(generated.includes(`KC_USER_${r}_PASSWORD`), r);
 });
 
 test("setup-env: creates .env once and never overwrites an existing one", () => {
