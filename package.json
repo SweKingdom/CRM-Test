@@ -1,0 +1,20 @@
+{
+  "name": "zephyr-crm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "seed": "node scripts/seed.mjs",
+    "typecheck": "node --check scripts/seed.mjs",
+    "lint": "node --check tests/seeds.test.mjs",
+    "test": "node --test",
+    "build": "npm run typecheck"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.0"
+  }
+}
