@@ -218,3 +218,26 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - Forecast category values and reopen target stage are assumptions (medium/low): confirm with PO.
 - Board p95 ≤2 s (low/medium): index + benchmark seed.
 - Lead conversion (US-155) needs the opportunity table and MEDDPICC row helper: sequence US-156 → US-157 → US-155.
+
+## Project register and won-deal handover (FT-117)
+
+**Modules:** `Zephyr.Api/Projects/{ProjectEndpoints.cs, ProjectHandover.cs, StaleProjectJob.cs}`; frontend `pages/Projects.tsx`, `components/ProjectForm.tsx`, `lib/projects.ts`; Seed `skills.sql`. Stories: US-161 (register, team, status), US-160 (won validation + auto-create), US-162 (daily stale rule).
+
+**Data model:** `project` (account_id required, opportunity_id partial-unique, type Standard/Support/Internal/Migration, status Active/Review/Closed, rate/contract money convention, budget_hours int, contracting_country, pm_user_id, start/end dates, reactivated_at); `project_team_member` (unique project+user, role); `skill`, `user_skill` (reference); `app_setting` (key/value, admin-editable) if no config table exists.
+
+**API:** `/api/v1/projects` CRUD (ETag), `POST /{id}:set-status`, `/{id}/team`, `/api/v1/skills`, `PUT /api/v1/admin/settings/stale_project_days`. `:close` (FT-116) returns `projectId` and 422 `won-incomplete` with `missing[]`.
+
+**Security:** PM sees own projects; Finance/Management/Admin all; scope enforced server-side via FT-112 predicate.
+
+**Decisions**
+- Handover runs inside the close transaction via a hook in FT-116 close · atomic, deal stays open on failure · alternative: async event.
+- One project per deal by unique index plus pre-check · idempotent re-close.
+- Budget hours: estimated else round-half-up(amount/rate) when currencies match, else null · per business rule.
+- Stale rule is a set-based state query with advisory lock and injectable clock · idempotent, catch-up safe, multi-instance safe · alternative: per-row scheduler.
+- Threshold in `app_setting`, env default 60 · admin-editable per brief.
+
+**Risks**
+- PM of new project (open decision 12) and contracting-unit values unresolved (high/medium): assumed PM = deal owner, unit = country; seed/config-only change.
+- Stale threshold 60 vs 90 migration (medium/low): configurable.
+- Depends on time_entry(project_id, work_date) index for stale query (low/medium).
+- Sequence: US-161 → US-160 → US-162 (needs time entry model); US-160 needs FT-116 close endpoint.
