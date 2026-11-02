@@ -71,12 +71,20 @@ public class OidcSignInTests(DbFixture fixture) : IAsyncLifetime
 
     private static readonly AuthProvider Trusted = new()
     {
-        Name = "test", Authority = Issuer, ClientId = "zephyr-web", ClientSecret = "secret", EmailTrusted = true
+        Name = "test",
+        Authority = Issuer,
+        ClientId = "zephyr-web",
+        ClientSecret = "secret",
+        EmailTrusted = true
     };
 
     private static readonly AuthProvider Untrusted = new()
     {
-        Name = "test", Authority = Issuer, ClientId = "zephyr-web", ClientSecret = "secret", EmailTrusted = false
+        Name = "test",
+        Authority = Issuer,
+        ClientId = "zephyr-web",
+        ClientSecret = "secret",
+        EmailTrusted = false
     };
 
     private static readonly BootstrapAdmin NoBootstrap = new(null, null);
