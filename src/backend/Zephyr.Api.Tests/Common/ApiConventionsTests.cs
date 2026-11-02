@@ -21,18 +21,32 @@ using Zephyr.Api.Tests.Support;
 
 namespace Zephyr.Api.Tests.Common;
 
-/// <summary>Reads the user from the X-Test-User header as the token's <c>sub</c> claim (stands in for the real sign-in).</summary>
+/// <summary>
+/// Stands in for the real sign-in: X-Test-User becomes the <c>zephyr_user_id</c> claim (the app_user id),
+/// X-Test-Sub becomes the identity provider's <c>sub</c> claim (which must never be used as the audit user).
+/// </summary>
 public sealed class TestAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (!Request.Headers.TryGetValue("X-Test-User", out var user))
+        var claims = new List<Claim>();
+        if (Request.Headers.TryGetValue("X-Test-User", out var user))
+        {
+            claims.Add(new Claim(HttpCurrentUser.ClaimType, user.ToString()));
+        }
+
+        if (Request.Headers.TryGetValue("X-Test-Sub", out var sub))
+        {
+            claims.Add(new Claim("sub", sub.ToString()));
+        }
+
+        if (claims.Count == 0)
         {
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        var identity = new ClaimsIdentity([new Claim("sub", user.ToString())], "Test");
+        var identity = new ClaimsIdentity(claims, "Test");
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), "Test")));
     }
 }
@@ -583,6 +597,41 @@ public class ApiConventionsTests(DbFixture fixture) : IAsyncLifetime
         var id = (await ReadJson(created)).GetProperty("id").GetGuid();
         await using var db = fixture.CreateContext();
         Assert.Equal(SystemUser.Id, (await db.ExternalIds.SingleAsync(x => x.Id == id)).CreatedBy);
+    }
+
+    [DbFact]
+    public async Task Ac6_The_identity_providers_sub_claim_is_not_the_audit_user()
+    {
+        var providerSubject = Guid.NewGuid();
+        await using var app = await StartAsync();
+
+        var request = new HttpRequestMessage(HttpMethod.Post, Url)
+        {
+            Content = JsonBody("""{"entityType":"account","system":"dynamics","value":"sub-only"}""")
+        };
+        request.Headers.Add("X-Test-Sub", providerSubject.ToString());
+        var created = await app.GetTestClient().SendAsync(request);
+
+        var id = (await ReadJson(created)).GetProperty("id").GetGuid();
+        await using var db = fixture.CreateContext();
+        Assert.Equal(SystemUser.Id, (await db.ExternalIds.SingleAsync(x => x.Id == id)).CreatedBy);
+    }
+
+    [Fact]
+    public void Ac6_Current_user_reads_zephyr_user_id_and_ignores_sub_and_malformed_values()
+    {
+        var appUser = Guid.NewGuid();
+
+        ICurrentUser For(params Claim[] claims) => new HttpCurrentUser(new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test")) }
+        });
+
+        Assert.Equal(appUser, For(new Claim(HttpCurrentUser.ClaimType, appUser.ToString())).UserId);
+        Assert.Null(For(new Claim("sub", appUser.ToString())).UserId);
+        Assert.Null(For(new Claim(ClaimTypes.NameIdentifier, appUser.ToString())).UserId);
+        Assert.Null(For(new Claim(HttpCurrentUser.ClaimType, "not-a-guid")).UserId);
+        Assert.Null(new HttpCurrentUser(new HttpContextAccessor { HttpContext = new DefaultHttpContext() }).UserId);
     }
 
     // ---- write hooks ----

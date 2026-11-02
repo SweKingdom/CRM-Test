@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
@@ -14,7 +16,14 @@ if (args.Length > 0 && args[0] == "import")
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Logs go to stdout as JSON lines; configuration comes from environment variables only.
+builder.Logging.ClearProviders();
+builder.Logging.AddJsonConsole();
+
+// API conventions (US-133) also register the audit interceptor and the DbContext.
 builder.Services.AddApiConventions();
+builder.Services.AddHealthChecks().AddNpgSql(_ => ZephyrDbContext.ConnectionStringFromEnvironment());
 
 var app = builder.Build();
 app.UseApiConventions();
@@ -24,7 +33,15 @@ using (var scope = app.Services.CreateScope())
     scope.ServiceProvider.GetRequiredService<ZephyrDbContext>().Database.Migrate();
 }
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+// Anonymous. 200 {"status":"Healthy"} when the API is up and SELECT 1 succeeds, 503 otherwise.
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        return context.Response.WriteAsync(JsonSerializer.Serialize(new { status = report.Status.ToString() }));
+    }
+}).AllowAnonymous();
 
 app.Run();
 

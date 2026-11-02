@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -12,11 +11,15 @@ public interface ICurrentUser
 }
 
 /// <summary>
-/// The user of the authenticated request: the app_user id in the token's <c>sub</c> claim. Never read from a request body.
-/// Null when the request is anonymous or the claim is not a user id (writes then use <see cref="SystemUser"/>).
+/// The user of the authenticated request: the app_user id in the Zephyr-specific <c>zephyr_user_id</c> claim.
+/// Sign-in (US-140) and personal API tokens (US-142) set it; the identity provider's own <c>sub</c> is not an app user id.
+/// Never read from a request body. Null when the request is anonymous or the claim is not a user id
+/// (writes then use <see cref="SystemUser"/>).
 /// </summary>
 public sealed class HttpCurrentUser(IHttpContextAccessor accessor) : ICurrentUser
 {
+    public const string ClaimType = "zephyr_user_id";
+
     public Guid? UserId
     {
         get
@@ -27,8 +30,7 @@ public sealed class HttpCurrentUser(IHttpContextAccessor accessor) : ICurrentUse
                 return null;
             }
 
-            var claim = principal.FindFirst("sub") ?? principal.FindFirst(ClaimTypes.NameIdentifier);
-            return Guid.TryParse(claim?.Value, out var id) ? id : null;
+            return Guid.TryParse(principal.FindFirst(ClaimType)?.Value, out var id) ? id : null;
         }
     }
 }
