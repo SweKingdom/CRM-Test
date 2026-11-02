@@ -1,6 +1,5 @@
 -- Reference data. Idempotent: ON CONFLICT (key) DO UPDATE, so edits here reach existing databases.
--- PO sign-off needed: call outcomes, time types (only 5 are named in the brief), countries, currencies,
--- close reasons. Values below are proposals, not confirmed business facts.
+-- Exchange rates (SEK per unit, rate_date 2026-10-26) belong to the money story (US-134), not to these tables.
 
 -- Stages (7). No decision / Disqualified are close outcomes, not stages.
 INSERT INTO stage (key, label, sort_order, active, is_terminal) VALUES
@@ -46,34 +45,34 @@ INSERT INTO close_reason (key, label, sort_order, active, outcome_key) VALUES
 ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sort_order,
   active = EXCLUDED.active, outcome_key = EXCLUDED.outcome_key;
 
--- Call outcomes (9). counts_as_contact sets Activity.connected.
+-- Call outcomes (9). counts_as_contact = the call connected (Activity.connected).
 INSERT INTO call_outcome (key, label, sort_order, active, counts_as_contact) VALUES
   ('no_answer', 'No answer', 1, true, false),
-  ('voicemail', 'Left voicemail', 2, true, false),
-  ('busy', 'Busy', 3, true, false),
-  ('wrong_number', 'Wrong number', 4, true, false),
-  ('gatekeeper', 'Reached gatekeeper only', 5, true, false),
-  ('call_back_later', 'Call back later', 6, true, true),
-  ('not_interested', 'Not interested', 7, true, true),
-  ('interested', 'Interested', 8, true, true),
+  ('voicemail_left', 'Voicemail left', 2, true, false),
+  ('gatekeeper_blocked', 'Gatekeeper blocked', 3, true, false),
+  ('wrong_number', 'Wrong or bad number', 4, true, false),
+  ('not_a_fit', 'Not a fit', 5, true, false),
+  ('not_interested', 'Not interested', 6, true, true),
+  ('callback_requested', 'Callback requested', 7, true, true),
+  ('referred_to_colleague', 'Referred to colleague', 8, true, true),
   ('meeting_booked', 'Meeting booked', 9, true, true)
 ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sort_order,
   active = EXCLUDED.active, counts_as_contact = EXCLUDED.counts_as_contact;
 
 -- Time types (11). Billable by default: client_work and overtime only.
--- Project required except vacation/absence; only those two may be future dated.
+-- A project is required except for vacation/absence; only those two may be entered ahead.
 INSERT INTO time_type (key, label, sort_order, active, billable_default, requires_project, allows_future, category) VALUES
-  ('client_work', 'Client work', 1, true, true, true, false, 'client'),
+  ('client_work', 'Client Work', 1, true, true, true, false, 'client'),
   ('overtime', 'Overtime', 2, true, true, true, false, 'client'),
-  ('internal', 'Internal', 3, true, false, true, false, 'internal'),
-  ('vacation', 'Vacation', 4, true, false, false, true, 'absence'),
-  ('absence', 'Absence', 5, true, false, false, true, 'absence'),
-  ('presales', 'Presales', 6, true, false, true, false, 'internal'),
-  ('training', 'Training', 7, true, false, true, false, 'internal'),
-  ('travel', 'Travel', 8, true, false, true, false, 'client'),
-  ('support', 'Support', 9, true, false, true, false, 'client'),
-  ('management', 'Management', 10, true, false, true, false, 'internal'),
-  ('recruitment', 'Recruitment', 11, true, false, true, false, 'internal')
+  ('internal_project', 'Internal Project', 3, true, false, true, false, 'internal'),
+  ('internal_development', 'Internal Development', 4, true, false, true, false, 'internal'),
+  ('presales_support', 'Presales Support', 5, true, false, true, false, 'internal'),
+  ('support', 'Support', 6, true, false, true, false, 'internal'),
+  ('customer_outreach', 'Customer Outreach', 7, true, false, true, false, 'internal'),
+  ('resource_assignment_sales', 'Resource Assignment Sales', 8, true, false, true, false, 'internal'),
+  ('travel', 'Travel', 9, true, false, true, false, 'internal'),
+  ('vacation', 'Vacation', 10, true, false, false, true, 'absence'),
+  ('absence', 'Absence', 11, true, false, false, true, 'absence')
 ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sort_order,
   active = EXCLUDED.active, billable_default = EXCLUDED.billable_default,
   requires_project = EXCLUDED.requires_project, allows_future = EXCLUDED.allows_future,
@@ -82,11 +81,11 @@ ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.so
 -- Countries (6). key = iso2.
 INSERT INTO country (key, label, sort_order, active, iso2) VALUES
   ('SE', 'Sweden', 1, true, 'SE'),
-  ('NO', 'Norway', 2, true, 'NO'),
-  ('DK', 'Denmark', 3, true, 'DK'),
-  ('FI', 'Finland', 4, true, 'FI'),
-  ('DE', 'Germany', 5, true, 'DE'),
-  ('IT', 'Italy', 6, true, 'IT')
+  ('IT', 'Italy', 2, true, 'IT'),
+  ('US', 'USA', 3, true, 'US'),
+  ('AE', 'UAE', 4, true, 'AE'),
+  ('ES', 'Spain', 5, true, 'ES'),
+  ('NO', 'Norway', 6, true, 'NO')
 ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sort_order,
   active = EXCLUDED.active, iso2 = EXCLUDED.iso2;
 
@@ -96,7 +95,7 @@ INSERT INTO currency (key, label, sort_order, active, iso3, decimals) VALUES
   ('EUR', 'Euro', 2, true, 'EUR', 2),
   ('USD', 'US dollar', 3, true, 'USD', 2),
   ('NOK', 'Norwegian krone', 4, true, 'NOK', 2),
-  ('DKK', 'Danish krone', 5, true, 'DKK', 2),
+  ('AED', 'UAE dirham', 5, true, 'AED', 2),
   ('GBP', 'Pound sterling', 6, true, 'GBP', 2)
 ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sort_order,
   active = EXCLUDED.active, iso3 = EXCLUDED.iso3, decimals = EXCLUDED.decimals;

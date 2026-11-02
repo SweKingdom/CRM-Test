@@ -1,12 +1,12 @@
 using System.Diagnostics;
 using Npgsql;
-using Xunit;
 using Zephyr.Api.Tests.Support;
 
 namespace Zephyr.Api.Tests.Seeds;
 
 /// <summary>AC 1-4 of US-130 against the migrated test database. Runs scripts/seed.mjs with Node.</summary>
-public class SeedTests : IClassFixture<DbFixture>
+[Collection("db")]
+public class SeedTests(DbFixture db) : IAsyncLifetime
 {
     private const string EkdalId = "00000000-0000-4000-8000-0000000d0002";
 
@@ -16,9 +16,9 @@ public class SeedTests : IClassFixture<DbFixture>
         "country", "currency", "meddpicc_element", "account",
     };
 
-    private readonly DbFixture _db;
+    public Task InitializeAsync() => db.ResetAsync();
 
-    public SeedTests(DbFixture db) => _db = db;
+    public Task DisposeAsync() => Task.CompletedTask;
 
     private static string RepoRoot()
     {
@@ -29,7 +29,7 @@ public class SeedTests : IClassFixture<DbFixture>
 
     private void Seed(string? seedDir = null)
     {
-        var b = new NpgsqlConnectionStringBuilder(_db.ConnectionString);
+        var b = new NpgsqlConnectionStringBuilder(db.ConnectionString);
         var url = $"postgres://{Uri.EscapeDataString(b.Username!)}:{Uri.EscapeDataString(b.Password ?? "")}" +
                   $"@{b.Host}:{b.Port}/{b.Database}";
         var start = new ProcessStartInfo("node") { WorkingDirectory = RepoRoot(), RedirectStandardError = true };
@@ -48,7 +48,7 @@ public class SeedTests : IClassFixture<DbFixture>
 
     private T Scalar<T>(string sql)
     {
-        using var conn = new NpgsqlConnection(_db.ConnectionString);
+        using var conn = new NpgsqlConnection(db.ConnectionString);
         conn.Open();
         using var cmd = new NpgsqlCommand(sql, conn);
         return (T)cmd.ExecuteScalar()!;
@@ -56,7 +56,7 @@ public class SeedTests : IClassFixture<DbFixture>
 
     private long Rows(string table) => Scalar<long>($"select count(*) from {table}");
 
-    [Fact]
+    [DbFact]
     public void Ac1_ReferenceData_IsLoaded()
     {
         Seed();
@@ -71,7 +71,7 @@ public class SeedTests : IClassFixture<DbFixture>
             Scalar<string>("select string_agg(key, ',' order by sort_order) from stage"));
     }
 
-    [Fact]
+    [DbFact]
     public void Ac2_Seed_IsIdempotent()
     {
         Seed();
@@ -80,7 +80,7 @@ public class SeedTests : IClassFixture<DbFixture>
         Assert.Equal(before, AllTables.Select(Rows).ToArray());
     }
 
-    [Fact]
+    [DbFact]
     public void Ac3_ReferenceRow_IsUpdatedInPlace()
     {
         Seed();
@@ -104,26 +104,18 @@ public class SeedTests : IClassFixture<DbFixture>
         finally
         {
             Directory.Delete(temp, true);
-            Seed();
         }
     }
 
-    [Fact]
+    [DbFact]
     public void Ac4_DemoAccounts_AreNeverOverwritten()
     {
         Seed();
         Assert.Equal(3, Scalar<long>(
             "select count(*) from account where name in ('Lindholm Demo AB', 'Ekdal Demo AB', 'Bellini Demo Srl')"));
-        try
-        {
-            Scalar<int>($"with u as (update account set name = 'Edited Name' where id = '{EkdalId}' returning 1) select count(*)::int from u");
-            Seed();
-            Assert.Equal("Edited Name", Scalar<string>($"select name from account where id = '{EkdalId}'"));
-            Assert.Equal(3, Rows("account"));
-        }
-        finally
-        {
-            Scalar<int>($"with u as (update account set name = 'Ekdal Demo AB' where id = '{EkdalId}' returning 1) select count(*)::int from u");
-        }
+        Scalar<int>($"with u as (update account set name = 'Edited Name' where id = '{EkdalId}' returning 1) select count(*)::int from u");
+        Seed();
+        Assert.Equal("Edited Name", Scalar<string>($"select name from account where id = '{EkdalId}'"));
+        Assert.Equal(3, Rows("account"));
     }
 }

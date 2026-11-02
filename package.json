@@ -1,17 +1,16 @@
 {
-  "name": "zephyr-crm",
-  "version": "0.1.0",
+  "name": "zephyr",
   "private": true,
-  "type": "module",
+  "description": "Zephyr CRM and project operations. The backend is .NET; these scripts are the project's check entry points.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "seed": "node scripts/seed.mjs",
-    "typecheck": "node --check scripts/seed.mjs",
-    "lint": "node --check tests/seeds.test.mjs",
-    "test": "node --test",
-    "build": "npm run typecheck"
+    "typecheck": "dotnet build src/backend/Zephyr.Api.Tests --no-incremental -warnaserror && node --check scripts/seed.mjs",
+    "lint": "dotnet format whitespace src/backend/Zephyr.Api --verify-no-changes && dotnet format whitespace src/backend/Zephyr.Api.Tests --verify-no-changes && node --check tests/seeds.test.mjs",
+    "test": "dotnet test src/backend/Zephyr.Api.Tests && node --test tests/seeds.test.mjs",
+    "build": "dotnet build src/backend/Zephyr.Api -c Release -warnaserror"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
