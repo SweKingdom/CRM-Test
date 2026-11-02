@@ -18,7 +18,8 @@ Headless .NET API (`src/backend/Zephyr.Api`) + web frontend (`src/frontend`, fra
 | scripts/check(.ps1), .github/workflows/check.yml | Quality gate (US-132) |
 
 ## Data model (baseline)
-Conventions on every table: `id uuid`, `created_at`, `updated_at`, `created_by`, `updated_by`, `deleted_at`, `custom jsonb`. Money: `amount numeric(18,2)`, `currency char(3)`, `amount_sek`, `rate_date`. Tables: `external_id` (unique system+entity_type+value), `audit_log` (append-only). Extensions: `pg_trgm`, `unaccent`. Reference tables (stages, call outcomes, time types, countries, currencies, MEDDPICC) are seeded by `Seed/*.sql` with `ON CONFLICT DO NOTHING`.
+
+Conventions on every table: `id uuid`, `created_at`, `updated_at`, `created_by`, `updated_by`, `deleted_at`, `custom jsonb`. Money: `amount numeric(18,2)`, `currency char(3)`, `amount_sek`, `rate_date`. Baseline migration `0001_Baseline` (US-129): `external_id` (unique system+entity_type+value), `audit_log` (append-only), extensions `pg_trgm`, `unaccent`. Migration `0002_ReferenceData` (US-130): reference tables `stage`, `close_outcome`, `close_reason`, `call_outcome`, `time_type`, `country`, `currency`, `meddpicc_element` and minimal `account`; seeded by `Seed/*.sql` with `ON CONFLICT (key) DO UPDATE`. Domain tables are created by their owning stories. `approval_delegation` is owned by US-145. See "Design review revisions (v22)" R1, R2.
 
 ## API inventory
 
@@ -45,11 +46,22 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 
 | Decision | Reason | Alternatives |
 |---|---|---|
-| EF Core migrations, applied at API start | Default for .NET, has down migrations | DbUp, Flyway |
-| Seeds as SQL run by `scripts/seed.mjs` | Idempotent via ON CONFLICT, works from host and CI | EF HasData, app-startup seeding |
-| Realm templates rendered by script | Keycloak import does not substitute env into JSON reliably; keeps passwords out of git | Committed passwords, Admin API calls after start |
+| EF Core migrations are the only schema mechanism, applied at API start; `Seed/*.sql` is data only | Default for .NET, has down migrations; one rule (R4) | DbUp, Flyway, `NNN_*.sql` files |
+| Seeds as SQL run by `scripts/seed.mjs`; reference tables `DO UPDATE`, demo/volume data `DO NOTHING` | Reference changes must reach existing DBs; user data must not be overwritten | DO NOTHING everywhere + reset; EF HasData |
+| US-130 creates the reference tables | FT-108 acceptance must be provable without later features | Move seeds to owning stories |
+| Volume seed = per-entity files, skip missing; full counts asserted in US-150 | Counts need all tables | One monolithic generate.sql |
+| One time zone, Europe/Stockholm, through `BusinessClock` | Avoid Sunday/Monday disagreement between features | UTC for entry rules, per-user zones |
+| Single `approval_delegation` owner (US-145) | One table, one route set | Two definitions |
+| Same-origin SPA (dev proxy), no CORS, custom-header CSRF check on cookie writes | Smallest attack surface, SameSite=Lax alone is not enough for PATCH/DELETE | CORS with credentials, antiforgery tokens |
+| Anonymous allow-list tested; public writes use System user | Default deny made verifiable | Per-endpoint attributes only |
+| By-external-id upsert for Admin and Integration roles only | Generic write over all entities is high privilege | Per-entity role rules |
+| One personal-data registry drives export and anonymise; sentinel scan test | Coverage cannot drift | Per-story field lists |
+| Shared `IWriteValidator` hook in US-133 | FT-125 needs no retrofit | Retrofit ~10 endpoints |
+| Shared `JobRunner` with advisory lock (FT-121) | One scheduling mechanism | Per-job timers |
+| CI Postgres service container; per-run database + Respawn | Repeatable, no secrets | Compose in CI, per-test transactions |
+| Realm templates rendered by script | Keycloak import does not substitute env into JSON; keeps passwords out of git | Committed passwords, Admin API calls |
 | Deterministic volume seed in SQL (`setseed`, md5-derived UUIDs) | Repeatable, fast set-based load | App-level generator |
-| `scripts/check` runs all steps, SKIPs inapplicable ones visibly | Gate usable before all stories exist | Fail on missing parts |
+| `scripts/check` runs all steps, SKIPs inapplicable ones visibly; US-132 merged first | Gate usable before all stories exist | Fail on missing parts |
 | Keyset cursor paging (US-133) | Stable and fast over ~56,000 rows | Offset paging |
 | ETag from id + `updated_at`, compared in the UPDATE's WHERE clause (US-133) | Race-free, no extra column | xmin, version column |
 | Over-limit `limit` returns 400, not silent cap | Explicit for integrators | Silent cap |
@@ -446,3 +458,75 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 | Real-export shape differs from synthetic | M / L | Out of scope; accuracy check deferred |
 
 No checks configured yet in the project beyond US-132 plan; tests listed per story.
+
+## Design review revisions (v22)
+
+Binding. Where a story or an earlier section of this document disagrees, this section wins. One revision round.
+
+### R1. Reference tables and seeds (critique 3.1, 2.5)
+- **US-130 owns the reference tables.** Migration `0002_ReferenceData` creates: `stage`, `close_outcome`, `close_reason`, `call_outcome`, `time_type`, `country`, `currency`, `meddpicc_element`, plus a minimal `account` table (`name`, `country_code`, conventions) so the three demo accounts can be seeded. Each reference table has `key text unique not null`, `label`, `sort_order int`, `active bool default true`, conventions. Table-specific columns (e.g. `stage.is_terminal`, `stage.exit_criteria jsonb`, `time_type.billable_default/requires_project/allows_future/category`) are in the same migration; the owning story (FT-116, US-163, US-134) may only add columns or rows, never create the table again. Contact, lead, opportunity, project, activity and time_entry tables stay with their owning stories.
+- **Seeds for reference tables use `ON CONFLICT (key) DO UPDATE`**, so label, flag and exit-criteria changes reach existing databases. Demo accounts and the volume seed use `DO NOTHING` (user-editable data, never overwritten). `validate_seeds.py` enforces both rules. "Seed-only change" in risks therefore means: re-run `npm run seed`, no reset needed.
+- **US-131 is a framework**: `tools/search-benchmark/generate/NN_<entity>.sql`, one file per entity, each skipped with a warning if its table is missing. FT-108 proves determinism and the entities that exist. The full counts (~56,000 searchable, ~105,000 time entries, exactly 18,495 in the trailing 12 months) are asserted in **US-150**, when all domain tables exist.
+
+### R2. `approval_delegation` (critique 1.1)
+Single owner: **US-145**. Table `approval_delegation(id, delegator_id, delegate_id, from_date date not null, to_date date not null, revoked_at, conventions)`; routes `GET|POST /api/v1/delegations`, `DELETE /api/v1/delegations/{id}` (revoke). No `/approval-delegations`. US-166 reuses `IsApproverOf` and creates no table or delegation route.
+
+### R3. One time zone (critique 3.2)
+**Europe/Stockholm for every business-date rule** (future-date check, "today", ISO week, delegation range, period lock, dashboards). Timestamps stay UTC in storage. One seam, `Common/BusinessClock` (owner **US-133**, wraps `TimeProvider` + `TimeZoneInfo "Europe/Stockholm"`): `Today()`, `IsFuture(date)`, `IsoWeek(date)`, `PeriodOf(date)`, `LockInstant(period)`. US-168 implements `IsLocked` on the same seam. No feature calls `DateTime.UtcNow` or `TimeProvider` directly for a business date.
+
+### R4. Migrations and test project (critique 1.2, 1.3)
+- **EF Core migrations are the only schema mechanism**, applied at API start and by `dotnet ef`. `Seed/*.sql` holds data only. There is no `db/migrations/NNN_*.sql`. FT-124 (US-179/180/181) uses one EF migration `Governance`.
+- **Import CLI** (`Zephyr.Api import …`): runs `Database.Migrate()` first, builds no web host, is a trusted operator tool that bypasses API permissions (it still writes audit rows with the System user).
+- **Test project: `Zephyr.Api.Tests` only.** `Zephyr.Tests/…` in US-167 to US-172 reads `Zephyr.Api.Tests/…`. Fixture path: `Zephyr.Api.Tests/fixtures/reference-month/`.
+- **Shared write hook (critique 1.4):** US-133 adds `IWriteValidator` (called by every entity write endpoint before save, no-op by default). FT-125 registers `MetadataValidator.ValidateCustom` against it, so FT-113 to FT-124 endpoints need no retrofit; each write endpoint must call the hook (test enumerates endpoints).
+- **Background jobs (critique 1.5):** FT-121 owns `Jobs/JobRunner` (hosted service, `pg_try_advisory_lock` per job name, injected clock). StaleProjectJob (US-162), period-lock audit (US-168) and retention expiry (US-180) register on it. Working-day logic uses the `public_holiday` table (US-171) via one `WorkingCalendar`; FT-121 reuses it.
+- Frontend paths follow `src/frontend/src/{shell,pages,lib,components}`; FT-125 puts `metadata/` and `admin/` under `src/frontend/src/`.
+
+### R5. SPA, CORS and CSRF (critique 2.1)
+- **Same origin.** The Vite dev server proxies `/api` and `/auth` to the API; production serves the built SPA from the API. No CORS is enabled; any cross-origin request is denied (test: preflight gets no `Access-Control-Allow-*`).
+- **CSRF:** every state-changing method (POST, PUT, PATCH, DELETE) authenticated by cookie must carry header `X-Zephyr-Csrf: 1` (custom header, cannot be set cross-site without CORS) and a same-origin `Origin`/`Sec-Fetch-Site`; otherwise 403 `CSRF_REJECTED`. Bearer-token (API token) calls are exempt. Owner: US-140 (middleware) with a test in US-141.
+
+### R6. Anonymous endpoint allow-list (critique 2.2)
+Default deny. The permission test (US-144 AC 8) compares all endpoints against this exact allow-list: `GET /health`, `GET /auth/login`, `GET /auth/denied`, `/signin-oidc-*` (handler), `POST /api/v1/public/*` (website forms, US-177/178). `/auth/me` and `/auth/logout` require a session. Public writes use the fixed **System** user as `created_by`, rate limit per IP, and a body-size limit.
+
+### R7. External-ID upsert permissions (critique 2.3)
+`PUT /api/v1/{plural}/by-external-id/{system}/{value}` requires the `update`+`create` permission of the entity at scope `org`, i.e. roles **Admin** and a new non-human role **Integration** (assigned to personal API tokens by Admin). Salesperson and others get 403. Mapping `plural → entity` comes from the same entity registry as the permission matrix. Soft-deleted match → 409 `RECORD_DELETED` (never revived; restore is a separate Admin action out of scope). The import CLI is a trusted operator tool (see R4).
+
+### R8. DSAR personal-data coverage (critique 2.4)
+One registry `Governance/PersonalData.cs` lists every personal-data column; the shared `Anonymise(person)` routine and the export are generated from it:
+| Table.column | Treatment |
+|---|---|
+| contact: first/last name, email, phone, title, address, notes, `custom` | blank / `Anonymised`, custom → `{}` |
+| lead: contact name, email, phone, notes, `custom` | blank |
+| activity: `subject`, `notes`/body (where regarding the person) | replaced with `[anonymised]`; row kept |
+| activity_participant: `name`, `email` | null |
+| service_request: `requester_name`, `requester_email`, `description` | blank |
+| reminder_log: `reason`, `error` mentioning the person | scrubbed |
+| import_reject: `detail` | scrubbed |
+| external_id.`value` for the person | deleted |
+| search_document row | deleted |
+Test (US-181): erase a fixture person whose sentinel string `ZZ-DSAR-SENTINEL` is in every column above, then scan all text/jsonb columns of the database for the sentinel: zero hits. Adding a personal-data column without registering it fails a schema test (registry vs a column-name pattern list).
+
+### R9. Search, soft delete, MCP (critique 2.6, 2.7)
+- US-147 triggers delete the `search_document` row on `deleted_at IS NOT NULL` and on `anonymised_at IS NOT NULL`; both tested.
+- US-175: `previewId` is stored with the calling user id and token id; confirm by any other user/token → 404; expires after 10 min; one use. Test added.
+
+### R10. Database in CI and test isolation (critique 3.3)
+`check.yml` starts Postgres 16 as a **service container** (not Compose) with env from `.env.example`; Keycloak is not started (only e2e needs it; e2e step SKIPs in CI with a visible message). Locally `scripts/check` uses Compose `db`. Tests use one database per run created by a fixture (`zephyr_test_<guid>`), migrated once, with **Respawn** resetting data between tests (reference tables kept); dropped at the end. Tests that need exclusive state use `[Collection]` serialisation.
+
+### R11. Dependencies, owners and sign-off (critique 3.4–3.7)
+Dependency links are recorded on the items (see list in Risks). US-132 is the first story merged. US-169's fixture is reviewed by the **PO (Finance reviewer named by PO)** before merge; its AC 4 is enabled by US-171. Stories using unconfirmed assumptions (roles/matrix values US-143, stage set US-156, PM of new project US-160, 5 of 11 time types US-163, seed lists US-130) carry the tag `Needs PO sign-off`; QA tests the documented assumption and records the sign-off status in the test report instead of failing on it.
+
+## Story dependency order (v22)
+
+Recorded in each story's Dependencies field. Build order constraints:
+1. **US-132 first**, then US-127, US-129, US-130 (reference tables), US-131 framework.
+2. US-133 (`BusinessClock`, `IWriteValidator`) before every domain write story; FT-112 predicate builder before FT-113.
+3. US-163 before US-162, US-164, US-165, US-166, US-168. US-145 before US-166. US-165 before US-166. US-161 before US-145/US-160/US-162.
+4. US-156/US-157 before US-155. US-158 (close hook) before US-160.
+5. US-171 before the dashboard assertion of US-169 (its AC 4). US-169 fixture signed off by the PO's Finance reviewer.
+6. US-147 and US-151 (`source` column) before US-175/US-176.
+7. US-173 (`JobRunner`) before the job registrations of US-162, US-168, US-180 (until then, tests call `RunAsync` directly).
+8. US-179 first of FT-124 (Governance EF migration), then US-180/US-181.
+9. FT-119 and FT-120 after FT-118. US-185 after all domain tables; US-150 after the six screens and the full volume seed.
+Risks (added): seeds of reference data now flow through `DO UPDATE` so a seed-only change needs only `npm run seed`; assumption-dependent stories carry the tag `Needs PO sign-off`; one EF migration chain means parallel branches must rebase and regenerate the model snapshot (medium likelihood, low impact).
