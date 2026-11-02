@@ -2,4 +2,4 @@
 
 ## Unreleased
 
-- 2026-11-02 — US-129 Database baseline migrations: conventions, extensions, external_id, audit: baseline migration with shared audit/soft-delete columns, pg_trgm and unaccent extensions, external_id and audit_log tables.
+- 2026-11-02 — US-128 Keycloak realm file with seven test users and a second realm: committed realm templates for `zephyr` (seven users) and `zephyr-b`, passwords rendered from `.env`, and a render script.
