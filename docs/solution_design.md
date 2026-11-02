@@ -414,3 +414,35 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - Label/code confusion on the board (low/medium): board uses codes everywhere.
 - Exchange-rate table naming differs from assumption (low/low).
 - Web layout from FT-113 not yet existing: file paths to be adapted (low/low).
+
+## Synthetic Dynamics export and import (FT-126)
+
+**Components**
+| Path | Purpose |
+|---|---|
+| tools/fake-dynamics-export/generate.mjs (+names.json) | Seeded (mulberry32) generator writing Dynamics-shaped CSVs + manifest.json to gitignored `./out/` (US-184) |
+| mapping/*.yaml, mapping/country.yaml | Per-table field mapping, filters, enum maps, fallbacks, country aliases (US-185/186) |
+| src/backend/Zephyr.Api/Import/* | CLI mode of the API binary: `dotnet run -- import --source ./out` — no web host; reuses EF Core connection; YamlDotNet is the only new dependency |
+| reports/import-{ts}.md/.csv | Reconciliation report per run (gitignored) |
+
+**Data model**: `import_run` (id, started_at, finished_at, status, source_path, per_table_json); `import_reject` (run_id, table_name, source_row, source_key, reason, detail, created_at); unique index on external_id (entity_type, system=`dynamics`, external_id). One migration.
+
+**Flow**: load order skill → account → contact → lead → opportunity → project → time entry → activity; each phase streams CSV in chunks (default 5,000), one transaction per chunk, batched `INSERT … ON CONFLICT` keyed on external_id; mapping errors abort before writes.
+
+**Decisions**
+- Generator in Node, not .NET · Node is already required, scripts/seed.mjs precedent, no build step · Alternative: .NET tool (extra project).
+- Import as CLI mode of Zephyr.Api · reuses DbContext, migrations, domain rules; no extra project · Alternatives: separate console project, Node script writing SQL directly.
+- Per-chunk transactions + upsert instead of one giant transaction · resumable, bounded memory, idempotent · Alternative: single transaction (long locks, restart from zero).
+- Duplicate accounts merge to survivor, all loser GUIDs kept in external_id · children link correctly and re-runs are stable.
+- Country: never default to Sweden; contracting country outside the six → null and logged (assumption for open decision 11).
+- Report reconciliation uses buckets loaded + merged + filtered + rejected = source (refines US-186 AC 4).
+
+**Risks**
+| Risk | L / I | Mitigation |
+|---|---|---|
+| Field mapping spec (docs/data) not yet verified against generator/engine | M / M | Both read table/column names from the spec; mismatch tests |
+| 105k time entries slow via EF | M / M | Batched SQL/COPY, no change tracking; timed run by PO |
+| Merge rule ambiguity for duplicate accounts | M / M | Rule lives in spec/mapping yaml; test fixtures |
+| Real-export shape differs from synthetic | M / L | Out of scope; accuracy check deferred |
+
+No checks configured yet in the project beyond US-132 plan; tests listed per story.
