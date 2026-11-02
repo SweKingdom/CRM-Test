@@ -70,3 +70,18 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 ## Open questions
 
 `.env` creation: by hand or `scripts/init-env` (PO). Run import/benchmarks: script by hand (PO to confirm). Six currencies and their SEK rates beyond USD/EUR, and rounding rule (US-134, PO): non-blocking, the missing rate gives 422 until set.
+
+## Documentation and build-log (FT-110)
+
+**Modules:** `README.md` (Run Zephyr locally), `BUILD.md` (one section per merged feature, six parts from `build/prompts/feature-section.md`), `docs/adr/` (ADR-013 local edition + index with approval status), `docs/claude-usage/{story}.md` written by `scripts/claude-usage.mjs` (Node, no dependencies, manual token/cost input), `.github/pull_request_template.md` (Claude usage + BUILD.md checklist), `docs/testing/outsider-rebuild.md` (protocol and results). Docs only; no data model, API or runtime impact.
+
+**Decisions**
+- Local-edition ADR defers ADR-001/002 and does not supersede them · keeps cloud decisions intact · alternative: supersede (rejected, cloud is only deferred).
+- Usage log is semi-automated via a Node script with manual numbers · no billing integration, no network, Node already a prerequisite · alternative: pure manual template (fallback if PO prefers).
+- One log file per story with appended rows · several sessions per story.
+- ADR approvals are by hand and recorded in the ADR index and PR.
+
+**Risks**
+- README drifts from Compose commands (medium/high): US-139 outsider rebuild after US-137 merges; PR checklist.
+- Assumed six BUILD.md parts and 8 h time box unconfirmed (medium/low): questions raised with PO; template file is the single source.
+- ADR approvers slow to respond (medium/low): does not block development.
