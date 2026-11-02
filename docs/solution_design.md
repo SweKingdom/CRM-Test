@@ -173,3 +173,25 @@ Sign-in via Keycloak issuer+subject; Zephyr stores no passwords. Secrets only in
 - Connected outcome values assumed (medium/low): confirm against seed file.
 - Lead-convert re-pointing of activities assumed (medium/medium): must be in the convert story.
 - account_id drift on regarding changes (low/medium): recompute on update; tests.
+
+## Call-first lead workspace (FT-115)
+
+**Modules:** `Zephyr.Api/Leads/LeadEndpoints.cs` (CRUD, call list, calls, convert/disqualify; split to `LeadConversion.cs` only if >300 lines); activity creation reused from `Activities/ActivityEndpoints.cs`; frontend `components/{LeadForm,CallList,CallLogPopover,ConvertLeadDialog,DisqualifyDialog}.tsx`, `lib/leads.ts`. Stories: US-153 (model/API), US-154 (call list + logging), US-155 (convert/disqualify).
+
+**Data model:** `lead` (required `lead_source_key`, nullable `account_id`, server-only `call_tries` int >=0 and `last_call_outcome_key`, `next_step`/`next_step_date`, `owner_user_id`, `status` CHECK open/converted/disqualified, `disqualify_reason_key`, `converted_*` ids, standard conventions + ETag). Index `(owner_user_id, status, next_step_date) WHERE deleted_at IS NULL`. `lead_source` picklist seeded from seed file.
+
+**API:** `/api/v1/leads` CRUD (ETag/If-Match), `GET ?view=calllist`, `POST /{id}/calls` (201), `POST /{id}:convert`, `POST /{id}:disqualify`. Errors RFC 9457: 422 validation, 409 lead not open, 412/428 ETag.
+
+**Security:** scope predicate from FT-112; convert needs lead + account + contact + opportunity create permissions; client cannot set call_tries/status.
+
+**Decisions**
+- Stored `call_tries` counter with atomic SQL increment in the same transaction as the call activity · concurrency-safe and fast list · alternative: COUNT of activities on read (slower, drifts with soft-deletes).
+- Convert is a single transaction with row lock/conditional update · no partial conversion, double submit yields 409 · alternative: saga (unneeded).
+- Convert re-points `activity.account_id` for lead activities · keeps FT-114 timeline denormalisation correct.
+- Colon action routes per US-155 · fall back to `/convert` if routing fails.
+
+**Risks**
+- Opportunity model/stage seed from another feature must exist before US-155 (medium/high): sequence after it.
+- Lead source and close-reason seed values unconfirmed (medium/low): take from seed files.
+- 3-click target unconfirmed by F23 (medium/low): manual usability check.
+- Call list p95 on Friday peak (low/medium): index + benchmark seed.
