@@ -22,7 +22,7 @@ export function renderEnv(template, random = randomPassword) {
       generated.push(key);
       return `${key}=${dbPassword}`;
     }
-    if (key === "ConnectionStrings__Default") {
+    if (key === "ZEPHYR_DB") {
       return `${key}=${value.replace(`Password=${PLACEHOLDER}`, `Password=${dbPassword}`)}`;
     }
     if (isSecretKey(key) && value === PLACEHOLDER) {

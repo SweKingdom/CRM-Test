@@ -2,12 +2,13 @@
   "name": "zephyr",
   "private": true,
   "type": "module",
+  "description": "Zephyr CRM and project operations. The backend is .NET; these scripts are the project's check entry points.",
   "scripts": {
     "setup-env": "node scripts/setup-env.mjs",
-    "typecheck": "node --check scripts/setup-env.mjs && node --check scripts/stack.test.mjs",
-    "lint": "node --check scripts/setup-env.mjs",
-    "test": "node --test scripts/stack.test.mjs",
-    "build": "node -e \"console.log('Images are built by: docker compose build')\""
+    "typecheck": "dotnet build src/backend/Zephyr.Api.Tests --no-incremental -warnaserror && node --check scripts/setup-env.mjs && node --check scripts/stack.test.mjs",
+    "lint": "dotnet format whitespace src/backend/Zephyr.Api --verify-no-changes && dotnet format whitespace src/backend/Zephyr.Api.Tests --verify-no-changes && node --check scripts/setup-env.mjs",
+    "test": "dotnet test src/backend/Zephyr.Api.Tests && node --test scripts/stack.test.mjs",
+    "build": "dotnet build src/backend/Zephyr.Api -c Release -warnaserror"
   },
   "engines": {
     "node": ">=20"

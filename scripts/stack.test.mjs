@@ -26,6 +26,7 @@ test("AC 1: compose defines the five services with healthchecks", () => {
   }
   assert.equal((compose.match(/healthcheck:/g) ?? []).length, 5);
   assert.match(read("src/backend/Zephyr.Api/Program.cs"), /MapHealthChecks\("\/health"/);
+  assert.match(read("src/backend/Zephyr.Api/Program.cs"), /AddNpgSql/);
   assert.match(compose, /127\.0\.0\.1:8080:8080/);
 });
 
@@ -33,6 +34,13 @@ test("AC 1: frontend image uses npm ci when a lockfile exists, npm install other
   const dockerfile = read("src/frontend/Dockerfile");
   assert.match(dockerfile, /COPY package\.json package-lock\.json\* \.\//);
   assert.match(dockerfile, /if \[ -f package-lock\.json \]; then npm ci; else npm install; fi/);
+});
+
+test("AC 1: the API image targets the same .NET version as the project", () => {
+  const framework = /<TargetFramework>net(\d+\.\d+)<\/TargetFramework>/.exec(read("src/backend/Zephyr.Api/Zephyr.Api.csproj"))[1];
+  const dockerfile = read("src/backend/Zephyr.Api/Dockerfile");
+  assert.match(dockerfile, new RegExp(`dotnet/sdk:${framework.replace(".", "\\.")} `));
+  assert.match(dockerfile, new RegExp(`dotnet/aspnet:${framework.replace(".", "\\.")}\\s`));
 });
 
 test("AC 2: mail is caught by Mailpit and no relay is configured", () => {
@@ -53,12 +61,10 @@ test("AC 3: .env is ignored, .env.example is not, and contains placeholders only
   assert.ok(ignore.includes(".env"));
   assert.ok(!ignore.some((l) => l === ".env.example" || l === ".env*"));
   const vars = parseEnv(example);
-  const secrets = Object.entries(vars).filter(
-    ([k]) => /PASSWORD|SECRET|SUBJECT/.test(k) && k !== "ConnectionStrings__Default",
-  );
+  const secrets = Object.entries(vars).filter(([k]) => /PASSWORD|SECRET|SUBJECT/.test(k) && k !== "ZEPHYR_DB");
   assert.ok(secrets.length >= 10);
   for (const [key, value] of secrets) assert.equal(value, "change-me", key);
-  assert.match(vars.ConnectionStrings__Default, /Password=change-me$/);
+  assert.match(vars.ZEPHYR_DB, /Password=change-me$/);
 });
 
 test("AC 3: .env.example has one KC_USER_<ROLE>_PASSWORD per role and no other test users", () => {
@@ -87,7 +93,7 @@ test("setup-env: generates random passwords and keeps the DB password in sync", 
   const vars = parseEnv(text);
   assert.doesNotMatch(text, /(PASSWORD|SECRET)=change-me/);
   assert.equal(vars.POSTGRES_PASSWORD, "pw1");
-  assert.match(vars.ConnectionStrings__Default, /Password=pw1$/);
+  assert.match(vars.ZEPHYR_DB, /Password=pw1$/);
   assert.equal(vars.ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT, "change-me");
   const kc = TEST_USERS.map((r) => vars[`KC_USER_${r}_PASSWORD`]);
   assert.ok(kc.every(Boolean));

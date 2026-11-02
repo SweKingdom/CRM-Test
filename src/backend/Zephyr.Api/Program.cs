@@ -1,5 +1,18 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore;
+using Zephyr.Api.Data;
+
+// "import" mode: apply migrations and exit, no web host (the import itself is added by its own story).
+if (args.Length > 0 && args[0] == "import")
+{
+    var options = new DbContextOptionsBuilder<ZephyrDbContext>();
+    ZephyrDbContext.Configure(options, new AuditInterceptor());
+    using var db = new ZephyrDbContext(options.Options);
+    db.Database.Migrate();
+    Console.WriteLine("Database is up to date.");
+    return;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,13 +20,17 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 
-var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? throw new InvalidOperationException(
-        "ConnectionStrings__Default is not set. Run 'node scripts/setup-env.mjs' to create .env.");
-
-builder.Services.AddHealthChecks().AddNpgSql(connectionString);
+builder.Services.AddScoped<AuditInterceptor>();
+builder.Services.AddDbContext<ZephyrDbContext>((sp, options) =>
+    ZephyrDbContext.Configure(options, sp.GetRequiredService<AuditInterceptor>()));
+builder.Services.AddHealthChecks().AddNpgSql(_ => ZephyrDbContext.ConnectionStringFromEnvironment());
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    scope.ServiceProvider.GetRequiredService<ZephyrDbContext>().Database.Migrate();
+}
 
 // Anonymous. 200 {"status":"Healthy"} when the API is up and SELECT 1 succeeds, 503 otherwise.
 app.MapHealthChecks("/health", new HealthCheckOptions
