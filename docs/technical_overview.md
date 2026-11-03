@@ -297,3 +297,17 @@ Integrations write idempotently through `PUT /api/v1/{plural}/by-external-id/{sy
 **Operations**
 - Post-deploy manual step: add the GitHub custom secret-scanning pattern `zph_[A-Za-z0-9_-]{43}` (see `docs/api-tokens.md`).
 - Changing the hash algorithm is not transparent: rows with another `hash_algorithm` are refused. A dual-algorithm lookup is needed before such a change.
+
+## Permission model (US-143)
+
+- **Source of truth:** `src/backend/Zephyr.Api/Permissions/permission-matrix.csv` (embedded resource, 665 rows = 7 roles × 19 entities × 5 actions). Columns: role, entity, action, scope.
+- **Scopes:** `none`, `own`, `team`, `country`, `org`. `country` means the contracting country (`app_user.home_country`). There is no business-unit scope.
+- **Tables:**
+  - `role(key text PK, label text not null)`: 7 rows, keys in title case (Salesperson, BDR, PM, Consultant, Finance, Management, Admin).
+  - `role_permission(role_key FK role, entity, action in read|create|update|delete|approve, scope in none|own|team|country|org)`, PK (role_key, entity, action). All 665 rows are stored; an absent row also means `none`.
+  - `app_user.manager_id uuid null` FK `app_user(id)`, check `manager_id <> id`, partial index.
+- **Migration:** `0004_RolesPermissions`. `Down` drops both tables and the column.
+- **Seeding:** `PermissionSeeder.SeedAsync` validates the CSV first (unknown role, entity, action or scope; wrong header or column count; duplicate row). It then upserts in one transaction, skips unchanged rows, and deletes rows and roles no longer in the CSV. It runs at API start after `Migrate()` and in `import` mode. An invalid CSV stops the API.
+- **Not built yet:** the enforcement engine (scope predicates, `RequirePermission`).
+- **Docs:** `docs/permissions.md` (model, team, project-scoped access, matrix).
+- **Tests:** `MatrixTests` (`Ac1_*` to `Ac5_*`, Respawn reset regression). DB tests need `ZEPHYR_TEST_DB`.
