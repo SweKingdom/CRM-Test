@@ -75,10 +75,11 @@ Not changed by US-136. The API description is for integrators; see the technical
 
 ## Who can see and change what
 
-Access to project time depends on your role and on the approver assignments.
+Access depends on your role and on the approver assignments.
 
 | What you want to do | Who can do it |
 |---|---|
+| Delete an account | Administrators only |
 | Add or remove a time approver on a project | Administrators only (for now) |
 | See the time entries of a project you approve | That project's approvers |
 | Approve time for a project | That project's approvers and their delegates |
