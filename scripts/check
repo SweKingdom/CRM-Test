@@ -8,7 +8,7 @@
 set -u
 
 SPECTRAL_VERSION=6.15.0
-OPENAPI_FILE=docs/api/openapi.yaml
+OPENAPI_FILE=docs/api/openapi.json
 OPENAPI_GENERATOR=tools/openapi-from-metadata/generate.mjs
 API_URL=http://127.0.0.1:18080
 STEPS=(lint tests seeds openapi-regenerate spectral oasdiff schemathesis vulnerabilities)
@@ -73,7 +73,7 @@ step_seeds() {
   "$python" scripts/validate_seeds.py
 }
 
-# 4. OpenAPI regenerate: the generator writes a temporary file; any difference from the committed docs/api/openapi.yaml fails.
+# 4. OpenAPI regenerate: the generator writes a temporary file; any difference from the committed docs/api/openapi.json fails.
 step_openapi_regenerate() {
   [ -f "$OPENAPI_GENERATOR" ] || { skip na "not yet applicable: no generator at $OPENAPI_GENERATOR"; return; }
   local generated rc=0
@@ -87,7 +87,7 @@ step_openapi_regenerate() {
   return $rc
 }
 
-# 5. Spectral (pinned version; rules in .spectral.yaml)
+# 5. Spectral (pinned version; rules in .spectral.yaml, which Spectral finds in the working directory)
 step_spectral() {
   [ -f "$OPENAPI_FILE" ] || { skip na "not yet applicable: no $OPENAPI_FILE"; return; }
   npx --yes "@stoplight/spectral-cli@$SPECTRAL_VERSION" lint "$OPENAPI_FILE"
@@ -113,7 +113,7 @@ step_oasdiff() {
 # 7. Schemathesis against the local API (needs the database only). A schema with security schemes needs a token or Keycloak.
 step_schemathesis() {
   [ -f "$OPENAPI_FILE" ] || { skip na "not yet applicable: no $OPENAPI_FILE"; return; }
-  if grep -q '^  securitySchemes:' "$OPENAPI_FILE" && [ -z "${ZEPHYR_CHECK_TOKEN:-}" ]; then
+  if grep -q '"securitySchemes"' "$OPENAPI_FILE" && [ -z "${ZEPHYR_CHECK_TOKEN:-}" ]; then
     skip keycloak "needs Keycloak"; return
   fi
   command -v schemathesis > /dev/null || { skip tool "schemathesis is not installed"; return; }

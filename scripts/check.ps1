@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Continue'
 Set-StrictMode -Version Latest
 
 $SpectralVersion = '6.15.0'
-$OpenApiFile = 'docs/api/openapi.yaml'
+$OpenApiFile = 'docs/api/openapi.json'
 $OpenApiGenerator = 'tools/openapi-from-metadata/generate.mjs'
 $ApiUrl = 'http://127.0.0.1:18080'
 $Steps = @('lint', 'tests', 'seeds', 'openapi-regenerate', 'spectral', 'oasdiff', 'schemathesis', 'vulnerabilities')
@@ -101,7 +101,7 @@ function Step-openapi-regenerate {
     }
 }
 
-# 5. Spectral
+# 5. Spectral (rules in .spectral.yaml, which Spectral finds in the working directory)
 function Step-spectral {
     if (-not (Test-Path $OpenApiFile)) { return (Skip 'na' "not yet applicable: no $OpenApiFile") }
     return (Invoke-Native npx @('--yes', "@stoplight/spectral-cli@$SpectralVersion", 'lint', $OpenApiFile))
@@ -128,7 +128,7 @@ function Step-oasdiff {
 # 7. Schemathesis
 function Step-schemathesis {
     if (-not (Test-Path $OpenApiFile)) { return (Skip 'na' "not yet applicable: no $OpenApiFile") }
-    if ((Select-String -Path $OpenApiFile -Pattern '^  securitySchemes:' -Quiet) -and -not $env:ZEPHYR_CHECK_TOKEN) {
+    if ((Select-String -Path $OpenApiFile -Pattern '"securitySchemes"' -SimpleMatch -Quiet) -and -not $env:ZEPHYR_CHECK_TOKEN) {
         return (Skip 'keycloak' 'needs Keycloak')
     }
     if (-not (Get-Command schemathesis -ErrorAction SilentlyContinue)) { return (Skip 'tool' 'schemathesis is not installed') }

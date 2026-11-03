@@ -72,15 +72,19 @@ test('REQUIRE_ALL=1 fails a skipped step whose tool is missing, but not a "needs
   assert.deepEqual(strict.rows.filter((r) => r[0] === 'SKIP').map((r) => r[1]), ['spectral', 'schemathesis']);
 });
 
-test('US-136: both scripts use the one API description path docs/api/openapi.yaml and the metadata generator', () => {
-  assert.match(read('scripts/check'), /^OPENAPI_FILE=docs\/api\/openapi\.yaml$/m);
-  assert.match(read('scripts/check.ps1'), /^\$OpenApiFile = 'docs\/api\/openapi\.yaml'$/m);
+test('US-136: every copy of the API description path is docs/api/openapi.json (PO answer #124 and #135) and the scripts use the metadata generator', () => {
+  assert.match(read('scripts/check'), /^OPENAPI_FILE=docs\/api\/openapi\.json$/m);
+  assert.match(read('scripts/check.ps1'), /^\$OpenApiFile = 'docs\/api\/openapi\.json'$/m);
+  assert.match(read('tools/openapi-from-metadata/generate.mjs'), /^const DEFAULT_OUT = resolve\(here, '\.\.', '\.\.', 'docs', 'api', 'openapi\.json'\);$/m);
+  assert.match(read('.gitattributes'), /^docs\/api\/openapi\.json text eol=lf$/m);
   for (const script of ['scripts/check', 'scripts/check.ps1']) {
     assert.match(read(script), /tools\/openapi-from-metadata\/generate\.mjs/);
-    assert.doesNotMatch(read(script), /openapi\.json/, script);
     assert.doesNotMatch(read(script), /(^|[^/])openapi\/openapi\./, script);
   }
-  assert.doesNotMatch(read('README.md'), /openapi\.json|(^|[^/])openapi\/openapi\./);
+
+  for (const file of ['scripts/check', 'scripts/check.ps1', 'README.md', '.gitattributes', '.github/workflows/check.yml', 'tools/openapi-from-metadata/generate.mjs', 'src/backend/Zephyr.Api.Tests/Common/OpenApiContractTests.cs']) {
+    assert.doesNotMatch(read(file), /openapi\.ya?ml|toYaml/, `${file} still names the YAML file or writer`);
+  }
 });
 
 test('AC 3: the workflow runs scripts/check on pull requests with read-only access and a Postgres service, and releases nothing', () => {

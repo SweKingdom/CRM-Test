@@ -146,11 +146,13 @@ npm run seed -- --volume --seed 7 --anchor 2026-12-11
 
 ## API description (OpenAPI)
 
-`docs/api/openapi.yaml` is the OpenAPI 3.1 description of the API (base `/api/v1`). It is generated and never edited by hand. The source is the field metadata in `tools/openapi-from-metadata/field-metadata.json`: each field gives its type, nullability, enum, max length and whether a client may send it, and becomes a schema property, a `required` entry and a validation constraint.
+`docs/api/openapi.json` is the OpenAPI 3.1 description of the API (base `/api/v1`). It is generated and never edited by hand; JSON has no comments, so `info.description` carries the "generated, do not edit" notice. The source is the field metadata in `tools/openapi-from-metadata/field-metadata.json`: each field gives its type, nullability, enum, max length and whether a client may send it, and becomes a schema property, a `required` entry and a validation constraint.
+
+The file is written with `JSON.stringify`: two-space indent, LF line ends, `openapi` and `info` first and every other key sorted, so the same metadata always gives the same bytes (no timestamps).
 
 ```sh
-node tools/openapi-from-metadata/generate.mjs                  # rewrite docs/api/openapi.yaml
-node tools/openapi-from-metadata/generate.mjs --out api.yaml   # write somewhere else (add a metadata path first to use another metadata file)
+node tools/openapi-from-metadata/generate.mjs                  # rewrite docs/api/openapi.json
+node tools/openapi-from-metadata/generate.mjs --out api.json   # write somewhere else (add a metadata path first to use another metadata file)
 ```
 
 Change the metadata, run the generator and commit both. The quality gate then checks that the committed file is exactly what the generator writes (step `openapi-regenerate`, failure message "run generate"), lints it with Spectral (`.spectral.yaml`) and compares it with the copy on `main` with `oasdiff breaking`. A removed field, a narrowed type or a new required property fails the gate; a deliberate break needs the PR label and a changelog note (a review policy, not a script). The test `OpenApiContractTests` fails when the API registers a route the file does not document, or the file documents a route the API lacks.
@@ -171,9 +173,9 @@ It runs eight steps in a fixed order, always all of them, prints `PASS`, `FAIL` 
 | 1 | `lint` | `npm run typecheck` (`dotnet build -warnaserror`) and `npm run lint` (`dotnet format --verify-no-changes`); the frontend `lint` and `typecheck` scripts when it has them |
 | 2 | `tests` | `npm test`: `dotnet test` with the integration tests on PostgreSQL, then the Node tests |
 | 3 | `seeds` | `python3 scripts/validate_seeds.py` |
-| 4 | `openapi-regenerate` | `node tools/openapi-from-metadata/generate.mjs --out <temporary file>`; fails with "run generate" if it differs from the committed `docs/api/openapi.yaml` |
-| 5 | `spectral` | Spectral 6.15.0 (`.spectral.yaml`) on `docs/api/openapi.yaml` |
-| 6 | `oasdiff` | `oasdiff breaking` against `origin/main:docs/api/openapi.yaml` (needs `oasdiff` installed; skipped when `main` has no such file yet) |
+| 4 | `openapi-regenerate` | `node tools/openapi-from-metadata/generate.mjs --out <temporary file>`; fails with "run generate" if it differs from the committed `docs/api/openapi.json` |
+| 5 | `spectral` | Spectral 6.15.0 (`.spectral.yaml`) on `docs/api/openapi.json` |
+| 6 | `oasdiff` | `oasdiff breaking` against `origin/main:docs/api/openapi.json` (needs `oasdiff` installed; skipped when `main` has no such file yet) |
 | 7 | `schemathesis` | Schemathesis 4 against the API started on 127.0.0.1:18080 with the database `zephyr_check` (needs `schemathesis` installed) |
 | 8 | `vulnerabilities` | `dotnet list package --vulnerable --include-transitive` and `npm audit --audit-level=high` |
 

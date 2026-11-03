@@ -42,8 +42,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install oasdiff
-        # Pinned release (OpenAPI 3.1 needs 1.11 or newer). The gate compares docs/api/openapi.yaml with
-        # origin/main:docs/api/openapi.yaml; fetch-depth 0 above makes origin/main available.
+        # Pinned release (OpenAPI 3.1 needs 1.11 or newer). The gate compares docs/api/openapi.json with
+        # origin/main:docs/api/openapi.json; fetch-depth 0 above makes origin/main available.
         env:
           OASDIFF_VERSION: "1.11.7"
         run: |
