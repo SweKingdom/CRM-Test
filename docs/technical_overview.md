@@ -300,17 +300,18 @@ Integrations write idempotently through `PUT /api/v1/{plural}/by-external-id/{sy
 
 ## Permission model (US-143)
 
-- **Source of truth:** `src/backend/Zephyr.Api/Permissions/permission-matrix.csv` (embedded resource, 665 rows = 7 roles × 19 entities × 5 actions). Columns: role, entity, action, scope.
-- **Scopes:** `none`, `own`, `team`, `country`, `org`. `country` means the contracting country (`app_user.home_country`). There is no business-unit scope.
-- **Tables:**
-  - `role(key text PK, label text not null)`: 7 rows, keys in title case (Salesperson, BDR, PM, Consultant, Finance, Management, Admin).
-  - `role_permission(role_key FK role, entity, action in read|create|update|delete|approve, scope in none|own|team|country|org)`, PK (role_key, entity, action). All 665 rows are stored; an absent row also means `none`.
-  - `app_user.manager_id uuid null` FK `app_user(id)`, check `manager_id <> id`, partial index.
-- **Migration:** `0004_RolesPermissions`. `Down` drops both tables and the column.
-- **Seeding:** `PermissionSeeder.SeedAsync` validates the CSV first (unknown role, entity, action or scope; wrong header or column count; duplicate row). It then upserts in one transaction, skips unchanged rows, and deletes rows and roles no longer in the CSV. It runs at API start after `Migrate()` and in `import` mode. An invalid CSV stops the API.
-- **Not built yet:** the enforcement engine (scope predicates, `RequirePermission`).
-- **Docs:** `docs/permissions.md` (model, team, project-scoped access, matrix).
-- **Tests:** `MatrixTests` (`Ac1_*` to `Ac5_*`, Respawn reset regression). DB tests need `ZEPHYR_TEST_DB`.
+Covers US-143 and US-144. Enforcement is in `Permissions/`.
+
+- **Source of truth:** roles, home country and team come from `app_user` through `IUserStatus.GetAsync`, cached for `USER_STATUS_RECHECK_SECONDS` (default 300). Claims are not used for authorisation, so cookie and token sessions behave the same.
+- **Scopes:** `own` (owner column = caller), `team` (owner in caller's team), `country` (country column = home country; never matches without one), `org` (all rows). The widest scope across the caller's roles applies. Values are bound as query parameters.
+- **Columns:** `PermissionService.Columns` maps each entity to its owner and country columns. Today: `account` (owner `created_by`).
+- **Endpoint declarations:** `RequirePermission(entity, action)` returns 401 when nobody is signed in and 403 when the scope is `none`. `RequireRoles(...)` is used for role-only routes: external upsert (Admin, Integration) and soft delete (Admin). `AsMeEndpoint()` marks routes for the caller only.
+- **Single-record access:** `FindAsync` returns 404 when the caller cannot read the record and 403 when it can read but may not perform the action.
+- **Default deny:** every endpoint must declare a permission, use `RequireRoles`, be `me`, or be on the anonymous allow-list in `AnonymousAllowList.cs`. A test enumerates endpoints and fails on any other.
+- **UI parity:** `GET /api/v1/me/permissions` (`Cache-Control: no-store`) returns `{roles, permissions, routes}` from the same engine. The frontend route guard reads it once per page load and again after a 401 or 403.
+- **Extension rule:** entity list, detail and search routes must use `PermissionService.Filter` and `FindAsync` and declare their columns in `PermissionService.Columns`. Project-based predicates for `project` and `time_entry` are added by US-145.
+- **Limits:** field-level security is not implemented. Token tests use a stand-in handler until US-142's real token handler is merged; AC 5 and AC 7 must be re-run then.
+- **Files:** `docs/permissions.md` (enforcement section).
 
 ## Claude usage logging (US-138)
 
@@ -319,3 +320,33 @@ Integrations write idempotently through `PUT /api/v1/{plural}/by-external-id/{sy
 - PR template: `.github/pull_request_template.md` has a `## Claude usage` section (Tokens in, Tokens out, Cost (USD)). The author pastes the story total from the report.
 - No separate usage script or log format exists (PO #88). Tests in `tests/docs.test.mjs` cover the template section.
 - `tools/claude-usage/` and `docs/claude-usage/` are not part of this workspace branch.
+
+## Approvers and delegation (US-145)
+
+**Tables** (migration `0005_Approvers`, SQL only; the EF model is unchanged)
+
+| Table | Columns | Notes |
+|---|---|---|
+| `project_approver` | `project_id uuid not null`, `user_id` FK to `app_user`, `created_at`, `created_by`, PK (`project_id`, `user_id`) | No project FK until US-161. Hard delete, no soft delete. |
+| `approval_delegation` | `delegator_id`, `delegate_id`, `from_date`, `to_date`, `revoked_at`, `deleted_at`, conventional audit columns | Check `ck_approval_delegation_dates` (`to_date >= from_date`), check `ck_approval_delegation_not_self` (`delegator_id <> delegate_id`), index on (`delegate_id`, `from_date`, `to_date`). |
+
+**Endpoints** (`Permissions/Approvers.cs`, registered by `MapApprovers()` from `MapZephyrEndpoints()`)
+
+| Route | Role | Result |
+|---|---|---|
+| `PUT /api/v1/projects/{id}/approvers/{userId}` | Admin | 204, idempotent; 404 for unknown user |
+| `DELETE /api/v1/projects/{id}/approvers/{userId}` | Admin | 204, idempotent |
+| `POST /api/v1/delegations` | Any role; Admin may pass `delegatorId` | 201; 422 or 403 as in the task document |
+| `GET /api/v1/delegations` | Any role | Own delegations; Admin sees all |
+| `DELETE /api/v1/delegations/{id}` | Delegator or Admin | 204; 404 if unknown, already revoked or not the caller's |
+
+**Helpers** (DB-backed, never cached; `today` = `BusinessClock.Today()`)
+- `ApproverScopeAsync(userId, today)`: the projects the user approves directly, plus the delegator's projects for active delegations.
+- `IsApproverOfAsync(userId, projectId, today)`: true when the project is in that scope.
+- `EnsureNotSelfApproval(entryUserId, callerId)`: throws a 403 problem when they match.
+
+**Active delegation:** `revoked_at IS NULL AND deleted_at IS NULL AND today BETWEEN from_date AND to_date`. Delegation is not transitive.
+
+**Audit:** `approver_added`, `approver_removed`, `delegation_created`, `delegation_revoked`.
+
+**Deferred:** the `PermissionService` OR-predicate (US-144), the PM-of-project rule and project FK (US-161), and endpoint-level self-approval and time-entry 404 checks (US-166, US-170). Details in `docs/permissions.md`.

@@ -28,7 +28,8 @@ test("AC 1: compose defines the five services with healthchecks", () => {
     assert.match(compose, new RegExp(`^  ${service}:`, "m"), `${service} missing`);
   }
   assert.equal((compose.match(/healthcheck:/g) ?? []).length, 5);
-  assert.match(read("src/backend/Zephyr.Api/Program.cs"), /MapHealthChecks\("\/health"/);
+  // The route table is in Endpoints.cs (so a test can build it); the database health check is registered in Program.cs.
+  assert.match(read("src/backend/Zephyr.Api/Endpoints.cs"), /MapHealthChecks\("\/health"/);
   assert.match(read("src/backend/Zephyr.Api/Program.cs"), /AddNpgSql/);
   assert.match(compose, /127\.0\.0\.1:8080:8080/);
 });

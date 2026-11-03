@@ -1,9 +1,10 @@
 # Permissions: roles, scopes and the rules matrix
 
-Who may do what in Zephyr (US-143, F06-S01). This page describes the model; the engine that applies it comes in a later story.
+Who may do what in Zephyr (US-143, F06-S01) and how the API and the UI enforce it (US-144, F06-S02).
 The single source of truth is [`permission-matrix.csv`](../src/backend/Zephyr.Api/Permissions/permission-matrix.csv). At API start,
-after the migrations, `PermissionSeeder` checks it and loads it into the `role` and `role_permission` tables. There is no screen or
-endpoint that edits the matrix: a change is a pull request on the CSV (and on the table below) plus a deploy.
+after the migrations, `PermissionSeeder` checks it and loads it into the `role` and `role_permission` tables, and the permission engine
+reads those rows into memory. There is no screen or endpoint that edits the matrix: a change is a pull request on the CSV (and on the
+table below) plus a deploy.
 
 ## Roles
 
@@ -64,6 +65,27 @@ For the project entities the scopes mean:
 
 Self-approval is not allowed whatever the matrix says: the engine refuses to let a person approve their own time.
 
+## Approvers and delegation (US-145)
+
+Approvers are set per project. An approver may read the time entries of that project (the one exception to consultant privacy)
+and approve them. Nobody approves their own entry, as approver or as delegate (403).
+
+| Endpoint | Who | Result |
+|---|---|---|
+| `PUT /api/v1/projects/{id}/approvers/{userId}` | Admin (the project's PM joins with the project register, US-161) | 204, repeating it is fine; 404 unknown user |
+| `DELETE /api/v1/projects/{id}/approvers/{userId}` | Admin | 204, repeating it is fine |
+| `POST /api/v1/delegations` `{delegateId, fromDate, toDate}` | The delegator (the caller); an Admin may add `delegatorId` to act for someone | 201 `{id, delegatorId, delegateId, fromDate, toDate}`; 422 when `toDate` is before `fromDate`, the delegate is the delegator or unknown, or the delegator is not an approver of any project |
+| `GET /api/v1/delegations` | The caller (as delegator or delegate); an Admin sees all | List, revoked ones included with `revokedAt` |
+| `DELETE /api/v1/delegations/{id}` | The delegator or an Admin | 204; 404 when unknown, already revoked or not yours |
+
+- A delegate holds the delegator's own approver projects when `revoked_at` is empty and today (the Europe/Stockholm date from
+  `BusinessClock`, both ends inclusive) is between `fromDate` and `toDate`. It is checked on every request and never cached, so a revoke ends it at once.
+- Delegation is not transitive: a delegate gets only the delegator's own `project_approver` projects, and a user whose only approver
+  rights are delegated cannot delegate (422).
+- Every change is written to the audit log (`approver_added`, `approver_removed`, `delegation_created`, `delegation_revoked`).
+- Code that reads or approves time uses `Approvers.ApproverScopeAsync(db, userId, today)`, `Approvers.IsApproverOfAsync(...)` and
+  `Approvers.EnsureNotSelfApproval(entryUserId, callerId)` (US-166, US-170). Until the time-entry features exist these helpers are the tested contract.
+
 ## Entities
 
 `account`, `contact`, `lead`, `opportunity`, `meddpicc`, `activity`, `project`, `project_team_member`, `skill`, `time_type`,
@@ -110,6 +132,16 @@ R = read, C = create, U = update, D = delete, A = approve; `—` = none. The tes
 | retention_rule | — | — | — | — | — | — | R:org C:org U:org D:org A:org |
 | import_run | — | — | — | — | — | — | R:org C:org |
 | dsar_request | — | — | — | — | — | — | R:org C:org U:org |
+
+## How the API and the UI enforce it (US-144)
+
+One engine (`IPermissionService`) answers for both, so the UI never offers what the API refuses.
+
+- **Roles come from the database, never from the request.** A user's roles, home country and team are read from `app_user` through the cached user status, which is rechecked every `USER_STATUS_RECHECK_SECONDS` (default 300). A role change by an admin reaches cookie sessions and API tokens within that window. Roles or scopes claimed inside a cookie or a token are ignored, so a personal token has exactly its owner's permissions.
+- **Every endpoint declares what it needs** (default deny). `RequirePermission(entity, action)` answers 403 when the caller's scope for that cell is `none`; `RequireRoles` is for the by-external-id writes (Admin and Integration, which the matrix cannot express); `me` endpoints (`/auth/me`, `/auth/logout`, `/api/v1/me/*`) need only a signed-in user. The only anonymous endpoints are the list in `AnonymousAllowList`: `GET /health`, `GET /auth/login`, `GET /auth/denied`, `/signin-oidc-*` and `POST /api/v1/public/*`. The test `EngineTests` walks every endpoint and fails for one that declares nothing, and it asserts the allow-list is exactly that set.
+- **Entity features use the engine for rows.** `Filter(query, user, entity)` adds the caller's read scope to a query before any limit, paging or count, so lists, search results and totals never include out-of-scope rows. `FindAsync` returns 404 for a record the caller cannot read and 403 when the caller can see it but may not do the action (update, delete, approve). Scope predicates are expression trees whose values are query parameters; each entity declares its owner and country columns once in `PermissionService.Columns`.
+- **Errors** are RFC 9457 `application/problem+json` (`FORBIDDEN` 403, `NOT_FOUND` 404, `UNAUTHENTICATED` 401).
+- **UI parity:** `GET /api/v1/me/permissions` returns `{roles, permissions: [{entity, action, scope}], routes: [path]}` (never cached). The web app reads it once per page load and again after a 401 or 403, hides what is missing and shows the access-denied page for a screen that is not in `routes`. The guard is UX only; the API stays authoritative. A screen is added to `PermissionEndpoints.UiRoutes` with the permission that opens it.
 
 ## Integrity
 

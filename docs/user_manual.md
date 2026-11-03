@@ -98,15 +98,23 @@ Use a personal API token when a script or your AI assistant needs to act as you.
 
 ## Who can see and change what
 
-Each user has one or more roles: Salesperson, BDR, PM, Consultant, Finance, Management or Admin. A role decides which records you can read and change, and how far that reaches: only your own records, your team, your contracting country, or the whole organisation.
+Access to project time depends on your role and on the approver assignments.
 
-- Your role determines what you see in each area (accounts and contacts, leads, opportunities, projects, time entries).
-- Where a row shows "none", you cannot see or change that kind of record.
-- Admin manages users, roles and reference data. Admin cannot edit business records or approve time.
-- Finance can reopen approved time entries, lock and unlock periods, and export approved billable hours. Finance cannot edit hours or notes.
-- Management can read the organisation's records and use the dashboards.
+| What you want to do | Who can do it |
+|---|---|
+| Add or remove a time approver on a project | Administrators only (for now) |
+| See the time entries of a project you approve | That project's approvers |
+| Approve time for a project | That project's approvers and their delegates |
+| Delegate your approval rights for a date range | An approver of at least one project |
+| See a delegation you gave or received | The delegator, the delegate, and administrators |
+| Revoke a delegation | The delegator and administrators |
 
-Note: the permission rules are being rolled out. Access enforcement in the screens is not yet active, and the rules are still awaiting sign-off by the product owner. For the full matrix, see `docs/permissions.md`.
+**Notes**
+- You cannot approve your own time, even when you hold delegated approval rights.
+- A delegation covers only the projects you approve yourself. It does not pass on rights you received from someone else.
+- A delegation is active on both its start date and its end date, using Swedish time. It ends at once when it is revoked.
+- Time entries of people who are not your approver or delegate are not shown to you.
+- The project's PM will be able to manage approvers once the project register is in place (US-161).
 
 ## Recording Claude usage on a pull request
 
