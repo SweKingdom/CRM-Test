@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Continue'
 Set-StrictMode -Version Latest
 
 $SpectralVersion = '6.15.0'
-$OpenApiFile = 'openapi/openapi.json'
+$OpenApiFile = 'docs/api/openapi.json'
 $OpenApiGenerator = 'tools/openapi-from-metadata/generate.mjs'
 $ApiUrl = 'http://127.0.0.1:18080'
 $Steps = @('lint', 'tests', 'seeds', 'openapi-regenerate', 'spectral', 'oasdiff', 'schemathesis', 'vulnerabilities')

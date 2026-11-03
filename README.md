@@ -66,8 +66,8 @@ It runs eight steps in a fixed order, always all of them, prints `PASS`, `FAIL` 
 | 1 | `lint` | `npm run typecheck` (`dotnet build -warnaserror`) and `npm run lint` (`dotnet format --verify-no-changes`); the frontend `lint` and `typecheck` scripts when it has them |
 | 2 | `tests` | `npm test`: `dotnet test` with the integration tests on PostgreSQL, then the Node tests |
 | 3 | `seeds` | `python3 scripts/validate_seeds.py` |
-| 4 | `openapi-regenerate` | `node tools/openapi-from-metadata/generate.mjs openapi/openapi.json`; fails if the committed file differs |
-| 5 | `spectral` | Spectral 6.15.0 (`.spectral.yaml`) on `openapi/openapi.json` |
+| 4 | `openapi-regenerate` | `node tools/openapi-from-metadata/generate.mjs docs/api/openapi.json`; fails if the committed file differs |
+| 5 | `spectral` | Spectral 6.15.0 (`.spectral.yaml`) on `docs/api/openapi.json` |
 | 6 | `oasdiff` | `oasdiff breaking` against the copy on `main` (needs `oasdiff` installed) |
 | 7 | `schemathesis` | Schemathesis 4 against the API started on 127.0.0.1:18080 with the database `zephyr_check` (needs `schemathesis` installed) |
 | 8 | `vulnerabilities` | `dotnet list package --vulnerable --include-transitive` and `npm audit --audit-level=high` |

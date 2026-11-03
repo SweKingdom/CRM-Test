@@ -72,6 +72,16 @@ test('REQUIRE_ALL=1 fails a skipped step whose tool is missing, but not a "needs
   assert.deepEqual(strict.rows.filter((r) => r[0] === 'SKIP').map((r) => r[1]), ['spectral', 'schemathesis']);
 });
 
+test('PO answer #124: both scripts use the one API description path docs/api/openapi.json and the metadata generator', () => {
+  assert.match(read('scripts/check'), /^OPENAPI_FILE=docs\/api\/openapi\.json$/m);
+  assert.match(read('scripts/check.ps1'), /^\$OpenApiFile = 'docs\/api\/openapi\.json'$/m);
+  for (const script of ['scripts/check', 'scripts/check.ps1']) {
+    assert.match(read(script), /tools\/openapi-from-metadata\/generate\.mjs/);
+    assert.doesNotMatch(read(script), /(^|[^/])openapi\/openapi\.json/, script);
+  }
+  assert.doesNotMatch(read('README.md'), /(^|[^/])openapi\/openapi\.json/);
+});
+
 test('AC 3: the workflow runs scripts/check on pull requests with read-only access and a Postgres service, and releases nothing', () => {
   const workflow = read('.github/workflows/check.yml');
   assert.match(workflow, /^on:\s*\n\s+pull_request:/m);
