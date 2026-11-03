@@ -35,6 +35,38 @@ public class ExternalId : IEntity
     public string Value { get; set; } = "";
 }
 
+/// <summary>A customer or prospect company. Minimal table from US-130; the account feature adds the rest of its columns.</summary>
+public class Account : IEntity
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public Guid? UpdatedBy { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string Custom { get; set; } = "{}";
+    public string Name { get; set; } = "";
+    public string? CountryCode { get; set; }
+}
+
+/// <summary>SEK per unit of a currency in one month (US-134). SEK itself has no row: its rate is always 1.</summary>
+public class ExchangeRate : IEntity
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public Guid? UpdatedBy { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string Custom { get; set; } = "{}";
+    public string Currency { get; set; } = "";
+
+    /// <summary>First day of the month the rate applies to.</summary>
+    public DateOnly Month { get; set; }
+
+    public decimal RateToSek { get; set; }
+}
+
 /// <summary>
 /// A person who can sign in (US-140). Users are pre-provisioned: <see cref="Issuer"/> and <see cref="Subject"/> stay null
 /// until the first sign-in links the identity provider's user. No password or secret of any kind is stored.
@@ -78,6 +110,8 @@ public class AuditLog
 public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbContext(options)
 {
     public DbSet<ExternalId> ExternalIds => Set<ExternalId>();
+    public DbSet<Account> Accounts => Set<Account>();
+    public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
     public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
@@ -116,6 +150,28 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
             e.ToTable("external_id", t => t.HasCheckConstraint("ck_external_id_system", "\"system\" IN ('dynamics', 'fortnox')"));
             e.HasIndex(x => new { x.System, x.EntityType, x.Value }).IsUnique().HasDatabaseName("ux_external_id_system_entity_type_value");
             e.HasIndex(x => new { x.EntityType, x.EntityId }).HasDatabaseName("ix_external_id_entity_type_entity_id");
+        });
+
+        // The table comes from migration 0002 (primary key account_pkey, expression index ix_account_name_lower).
+        modelBuilder.Entity<Account>(e =>
+        {
+            e.ToTable("account");
+            e.HasKey(x => x.Id).HasName("account_pkey");
+            e.Property(x => x.CountryCode).HasColumnType("character(2)");
+        });
+
+        modelBuilder.Entity<ExchangeRate>(e =>
+        {
+            e.ToTable("exchange_rate", t =>
+            {
+                t.HasCheckConstraint("ck_exchange_rate_currency", "currency <> 'SEK'");
+                t.HasCheckConstraint("ck_exchange_rate_month", "date_trunc('month', month::timestamp) = month::timestamp");
+                t.HasCheckConstraint("ck_exchange_rate_rate", "rate_to_sek > 0");
+            });
+            e.Property(x => x.Currency).HasColumnType("char(3)");
+            e.Property(x => x.Month).HasColumnType("date");
+            e.Property(x => x.RateToSek).HasColumnType("numeric(18,6)");
+            e.HasIndex(x => new { x.Currency, x.Month }).IsUnique().HasDatabaseName("ux_exchange_rate_currency_month");
         });
 
         // The unique index on lower(email) (an expression index) is created by the migration only.
