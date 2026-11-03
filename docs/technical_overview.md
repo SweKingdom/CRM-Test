@@ -311,3 +311,11 @@ Integrations write idempotently through `PUT /api/v1/{plural}/by-external-id/{sy
 - **Not built yet:** the enforcement engine (scope predicates, `RequirePermission`).
 - **Docs:** `docs/permissions.md` (model, team, project-scoped access, matrix).
 - **Tests:** `MatrixTests` (`Ac1_*` to `Ac5_*`, Respawn reset regression). DB tests need `ZEPHYR_TEST_DB`.
+
+## Claude usage logging (US-138)
+
+- Usage source: the pre-commit hook in `tools/claude-usage/` writes one file per push and developer to `docs/claude-usage/{story}_{timestamp}_{developer}.md`. Front matter holds tokens, active minutes and models.
+- Per-story totals: `node tools/claude-usage/cli.mjs report`.
+- PR template: `.github/pull_request_template.md` has a `## Claude usage` section (Tokens in, Tokens out, Cost (USD)). The author pastes the story total from the report.
+- No separate usage script or log format exists (PO #88). Tests in `tests/docs.test.mjs` cover the template section.
+- `tools/claude-usage/` and `docs/claude-usage/` are not part of this workspace branch.
