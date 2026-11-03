@@ -14,6 +14,7 @@ if (args.Length > 0 && args[0] == "import")
     ZephyrDbContext.Configure(options, new AuditInterceptor());
     using var db = new ZephyrDbContext(options.Options);
     db.Database.Migrate();
+    await PermissionSeeder.SeedAsync(db);
     Console.WriteLine("Database is up to date.");
     return;
 }
@@ -37,7 +38,10 @@ app.MapUsersEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {
-    scope.ServiceProvider.GetRequiredService<ZephyrDbContext>().Database.Migrate();
+    var db = scope.ServiceProvider.GetRequiredService<ZephyrDbContext>();
+    db.Database.Migrate();
+    // The permission matrix (US-143): an invalid permission-matrix.csv stops the API from starting.
+    await PermissionSeeder.SeedAsync(db);
 }
 
 // Anonymous. 200 {"status":"Healthy"} when the API is up and SELECT 1 succeeds, 503 otherwise.

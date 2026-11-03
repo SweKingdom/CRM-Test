@@ -74,3 +74,12 @@ test('AC 4: the ADR index lists the six ADRs and the local edition, none Accepte
 test('the PR template carries the BUILD.md checklist line', () => {
   assert.ok(read('.github/pull_request_template.md').includes('BUILD.md section added and reviewed by second developer'));
 });
+
+test('US-138 AC 3: the PR template has a Claude usage section with tokens in, tokens out and cost fields', () => {
+  const body = section(read('.github/pull_request_template.md'), 'Claude usage');
+  for (const field of ['Tokens in:', 'Tokens out:', 'Cost (USD):']) {
+    assert.ok(body.includes(field), `${field} missing`);
+  }
+  assert.ok(body.includes('node tools/claude-usage/cli.mjs report'), 'points to the existing report command');
+  assert.ok(body.includes('docs/claude-usage/'));
+});
