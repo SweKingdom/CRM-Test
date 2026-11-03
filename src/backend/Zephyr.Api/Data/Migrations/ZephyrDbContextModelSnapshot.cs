@@ -204,6 +204,76 @@ partial class ZephyrDbContextModelSnapshot : ModelSnapshot
             b.ToTable("audit_log", (string)null);
         });
 
+        modelBuilder.Entity("Zephyr.Api.Data.ExchangeRate", b =>
+        {
+            b.Property<Guid>("Id")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("uuid")
+                .HasColumnName("id")
+                .HasDefaultValueSql("gen_random_uuid()");
+
+            b.Property<DateTime>("CreatedAt")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("CreatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("created_by");
+
+            b.Property<string>("Currency")
+                .IsRequired()
+                .HasColumnType("char(3)")
+                .HasColumnName("currency");
+
+            b.Property<string>("Custom")
+                .IsRequired()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("jsonb")
+                .HasColumnName("custom")
+                .HasDefaultValueSql("'{}'::jsonb");
+
+            b.Property<DateTime?>("DeletedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("deleted_at");
+
+            b.Property<DateOnly>("Month")
+                .HasColumnType("date")
+                .HasColumnName("month");
+
+            b.Property<decimal>("RateToSek")
+                .HasColumnType("numeric(18,6)")
+                .HasColumnName("rate_to_sek");
+
+            b.Property<DateTime>("UpdatedAt")
+                .IsConcurrencyToken()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("updated_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("UpdatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("updated_by");
+
+            b.HasKey("Id")
+                .HasName("pk_exchange_rate");
+
+            b.HasIndex("Currency", "Month")
+                .IsUnique()
+                .HasDatabaseName("ux_exchange_rate_currency_month");
+
+            b.ToTable("exchange_rate", null, t =>
+            {
+                t.HasCheckConstraint("ck_exchange_rate_currency", "currency <> 'SEK'");
+
+                t.HasCheckConstraint("ck_exchange_rate_month", "date_trunc('month', month::timestamp) = month::timestamp");
+
+                t.HasCheckConstraint("ck_exchange_rate_rate", "rate_to_sek > 0");
+            });
+        });
+
         modelBuilder.Entity("Zephyr.Api.Data.ExternalId", b =>
         {
             b.Property<Guid>("Id")

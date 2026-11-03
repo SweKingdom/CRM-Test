@@ -74,32 +74,20 @@ Keycloak stands in for Entra locally. It runs in dev mode on localhost only.
 
 ## Reference data and seeds (US-130)
 
-**Migration `0002_ReferenceData`** (raw SQL, no model snapshot change) creates the reference tables. Every reference table has `key text unique`, `label text`, `sort_order int`, `active bool default true`.
+Reference data and seeds (US-130)
 
-| Table | Extra columns |
-|---|---|
-| stage | `is_terminal`, `exit_criteria jsonb null` |
-| close_outcome | `maps_to_stage` (Won, Lost, NoDecision, Disqualified) |
-| close_reason | `outcome_key` FK to close_outcome.key |
-| call_outcome | `counts_as_contact` |
-| time_type | `billable_default`, `requires_project`, `allows_future`, `category` (client, internal, absence) |
-| country | `iso2 char(2) unique` (key = iso2) |
-| currency | `iso3 char(3) unique`, `decimals int default 2` |
-| meddpicc_element | none |
-| account (minimal) | `name`, `country_code char(2) null`; unique index on `lower(name)` |
+Volume seed (US-131)
 
-**Seed files** (applied in filename order by `scripts/seed.mjs`, one transaction per file):
-- `Seed/0001_reference_data.sql`: reference rows, `ON CONFLICT (key) DO UPDATE`. Changes reach existing databases without a reset.
-- `Seed/0002_demo_accounts.sql`: three demo accounts with fixed UUIDs, `ON CONFLICT (id) DO NOTHING`.
-- No seed-tracking table is used.
-
-**Command:** `npm run seed` (`node scripts/seed.mjs`). Connection from `DATABASE_URL` or `.env`. Dependencies: `pg`, `dotenv`.
-
-**Validation:** `python3 scripts/validate_seeds.py [dir]` (stdlib only). Checks: sequential `NNNN_*.sql` names, no DELETE/DROP/TRUNCATE, ON CONFLICT on every INSERT, DO UPDATE for reference files and DO NOTHING for demo files, row counts per set (9/11/6/6/7/8), no email or phone outside `example.com`. Exit 1 prints `file:line reason`.
-
-**Tests:** `SeedTests.cs` (AC 1–4) needs `ZEPHYR_TEST_DB`; CI sets `ZEPHYR_REQUIRE_DB=1`. `tests/seeds.test.mjs` covers AC 5 using `tests/seeds_broken/`.
-
-**Not in this story:** exchange rates (US-134), volume seed set (US-131).
+- Entry point: `npm run seed -- --volume [--seed N] [--anchor YYYY-MM-DD] [--reset]` (`scripts/seed.mjs`).
+- SQL generators: `tools/search-benchmark/generate/01_account.sql` to `06_time_entry.sql`, with shared pg_temp helpers in `_helpers.sql`. Parameters arrive as transaction settings: `zephyr.seed`, `zephyr.anchor`, `zephyr.data`, `zephyr.targets`.
+- Targets: `generate/targets.json` (56,000 searchable records; 105,000 time entries; 18,495 in the trailing 12 months).
+- Input lists: `tools/search-benchmark/data/` (`names.json`, `cities.json`, `typos.json`, `time_types.json`).
+- Determinism: each value is `md5(seed || entity || n)`. No `setseed`/`random()`.
+- Loader behaviour: one transaction per entity; missing tables are skipped with a warning; ANALYZE after load; a second run without `--reset` is refused; `--reset` deletes only rows where `custom->>'synthetic' = 'true'`.
+- Marker: every generated row has `custom->>'synthetic' = 'true'`. Typo rows store the original spelling in `custom->>'typo_of'`.
+- Time entries: first 18,495 spread over [anchor − 12 months, anchor]; the remainder over the 1,460 days before that window. Columns filled: `project_id`, `work_date`, `duration_minutes`, `notes`, `user_id`, `time_type`.
+- Assumed schema (owned by later stories or US-150): `time_entry.time_type` holds `time_type.key`; `time_entry.user_id` is a plain uuid with no foreign key.
+- Tests: `tests/volume.test.mjs` (targets, file layout, columns, keys, option validation); `VolumeSeedTests.cs` (DB-backed AC 1 to AC 3; checksum per table, extended as tables are created). DB tests need `ZEPHYR_TEST_DB` and run in CI with `ZEPHYR_REQUIRE_DB=1`.
 
 ## API conventions (US-133)
 
@@ -172,3 +160,79 @@ No password or secret column exists. Users are pre-provisioned; there is no self
 | ZEPHYR_BOOTSTRAP_ADMIN_ISSUER / ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT | Optional. Used only while no active admin exists. |
 
 Secrets live only in the gitignored `.env`. Provider 1 `CLIENTSECRET` must equal `OIDC_CLIENT_SECRET`.
+
+## Quality gate (US-132)
+
+The quality gate is one script, `scripts/check` (Bash) with `scripts/check.ps1` (Windows) as its equivalent. Developers run it locally; GitHub Actions runs `bash scripts/check` on every pull request. Nothing is deployed.
+
+| # | Step | Command | Missing target |
+|---|---|---|---|
+| 1 | lint | `dotnet build -warnaserror`, `dotnet format --verify-no-changes`, frontend `npm run lint && npm run typecheck` | — |
+| 2 | tests | `dotnet test` against the test database | — |
+| 3 | seeds | `python3 scripts/validate_seeds.py` | — |
+| 4 | openapi-regenerate | `node tools/openapi-from-metadata/generate.mjs docs/api/openapi.json`; fails if git diff | SKIP (not yet applicable) |
+| 5 | spectral | `npx --yes @stoplight/spectral-cli@6.15.0` on `docs/api/openapi.json` (`.spectral.yaml` extends `spectral:oas`) | SKIP (not yet applicable) |
+| 6 | oasdiff | `oasdiff breaking` against the copy on `origin/main` (or `main`) | SKIP (not yet applicable) |
+| 7 | schemathesis | Schemathesis 4 against the local API | SKIP (not yet applicable) |
+| 8 | vulnerabilities | `dotnet list package --vulnerable --include-transitive`; `npm audit --audit-level=high` | — |
+
+**Behaviour**
+- Each step prints `PASS`, `FAIL` or `SKIP` and a `=== Summary` table. All steps run even after a failure. Exit code 1 if any step fails.
+- A missing target is a SKIP, never a silent PASS. With `REQUIRE_ALL=1` (set in CI), a SKIP for a built feature fails the run.
+- Steps needing Keycloak print `SKIP (needs Keycloak)` in CI. Run them locally with `docker compose up -d keycloak`.
+- Locally the script starts the Compose `db` service and waits for it to be healthy, and leaves services running. In CI (`CI=true`) it does not call Compose for `db`.
+
+**Database for tests**
+- Tests read `ZEPHYR_TEST_DB` only, in Npgsql key=value form. `DATABASE_URL` is not read.
+- Each run uses its own database with Respawn for isolation.
+
+**CI workflow** (`.github/workflows/check.yml`)
+- Trigger: `on: pull_request` only. No `pull_request_target`.
+- Permissions: `contents: read`. No secrets, no login, no push.
+- Runner: ubuntu-latest, with .NET, Node and Python set up.
+- Service: Postgres 16 as a `services:` container, health-checked on port 5432. Credentials come from the `.env.example` values.
+- Before the check, the workflow copies `.env.example` to `.env`.
+
+**Pinned tools**
+- Spectral: `@stoplight/spectral-cli@6.15.0`, held in one constant in the scripts. A test checks the pin. Not yet an exact devDependency (see PO answer #123).
+- Later steps (oasdiff, Schemathesis 4) must be installed in the workflow when their steps become active (US-136).
+
+**Tests:** `tests/check.test.mjs` runs with `npm test`. The bash-driven tests are skipped on native Windows.
+
+## Documentation and decision records (US-137)
+
+- `README.md` section "Run Zephyr locally": ordered commands from clone to signed-in seeded system, with URLs, seeded test user name and stop/reset. No secrets; `.env.example` holds placeholders only.
+- `BUILD.md`: build log, one `## F{nn} — {title} (FT-code)` section per merged feature. Each section has the six parts of `build/prompts/feature-section.md` and a `Reviewed by:` line (second developer).
+- `build/prompts/feature-section.md`: single source for the six part names.
+- `docs/adr/`: ADR-013 (local edition) is Proposed. It defers ADR-001 and ADR-002 without replacing them. `docs/adr/README.md` is the approval index for ADR-004, 006, 007, 008, 009, 012 and 013. Status changes to Accepted only in the approving PR, with approver and approval PR recorded.
+- `.github/pull_request_template.md`: checklist line for the BUILD.md section and second-developer review.
+- `tests/docs.test.mjs`: checks the README order, BUILD.md headings and ADR index.
+
+## Money and exchange rates (US-134)
+
+**Money value.** `MoneyInput.Read` accepts only `amount` (string, at most 2 decimals, at most 16 integer digits) and `currency` (3 capitals). `amountSEK` and `rateDate` are ignored on input. The output `Money` is written by `MoneyJsonConverter` as `{amount, currency, amountSEK, rateDate}`.
+
+**Stamping.** Domain stories call `ExchangeRates.StampAsync(db, input, businessDate)` at write time and store amount, currency, amount_sek and rate_date. The rate month is the first day of the business date's month. SEK uses rate 1 and the same rateDate. `amount_sek = Math.Round(amount × rate, 2, MidpointRounding.AwayFromZero)` on `decimal`. No rate gives 422 `MISSING_EXCHANGE_RATE` with no fallback. Stamped values are not recomputed.
+
+**Data model.** Table `exchange_rate`:
+
+| Column | Type | Notes |
+|---|---|---|
+| currency | char(3) | FK to `currency(iso3)` |
+| month | date | First day of the month |
+| rate_to_sek | numeric(18,6) | Greater than 0 |
+
+Check constraints: currency <> 'SEK'; month is the first day of a month; rate_to_sek > 0. Unique index `ux_exchange_rate_currency_month`. Migration `0003_AddExchangeRate` (down drops the table). `Conventions` in `0002_ReferenceData` is internal for reuse.
+
+**API.**
+
+| Route | Role | Notes |
+|---|---|---|
+| `GET /api/v1/exchange-rates` | Signed-in user | List conventions (US-133); filter and sort on `currency`, `month`, `updatedAt` |
+| `PUT /api/v1/exchange-rates/{currency}/{yyyy-MM}` | Admin | Body `{rateToSek}` (number or string). 201 created, 200 changed, 422 for SEK, unknown or inactive currency, bad month or bad rate; 401 anonymous; 403 not admin |
+
+**Authorisation.** The admin check is `ExchangeRates.DeniedStatus`, which tests the `Admin` role claim (`ClaimTypes.Role`). It is interim until the permission engine (US-144, FT-112) replaces it. `AppUser.AdminRole` and `ExchangeRates.AdminRole` both hold `"Admin"` and should be unified then.
+
+**Seed.** `Seed/0003_exchange_rates.sql` loads EUR 11, USD 10, NOK 0.95, AED 2.72 and GBP 12.80 for every month from 2020-01 to 2030-12 (`ON CONFLICT DO NOTHING`). 660 rows in total. Re-running the seed keeps edited rates.
+
+**Deployment.** The API applies migration `0003_AddExchangeRate` at start. Then run `node scripts/seed.mjs`.

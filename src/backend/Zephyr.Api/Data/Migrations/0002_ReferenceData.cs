@@ -8,7 +8,8 @@ namespace Zephyr.Api.Data.Migrations;
 [Migration("0002_ReferenceData")]
 public class ReferenceData : Migration
 {
-    private const string Conventions =
+    /// <summary>The columns every table has; shared with the migrations of later tables.</summary>
+    internal const string Conventions =
         "id uuid primary key default gen_random_uuid(), " +
         "created_at timestamptz not null default now(), updated_at timestamptz not null default now(), " +
         "created_by uuid null, updated_by uuid null, deleted_at timestamptz null, " +
