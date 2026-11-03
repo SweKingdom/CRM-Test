@@ -19,6 +19,15 @@ public static class ExternalUpsert
     private const int MaxValueLength = 200;
 
     /// <summary>
+    /// Org-wide create and update on every entity (design v22 R7). The matrix cannot say this: Integration is an API client,
+    /// not a matrix role, so these routes check the caller's roles instead of an (entity, action) cell.
+    /// </summary>
+    public static readonly string[] OrgWriteRoles = ["Admin", "Integration"];
+
+    /// <summary>Least privilege until the matrix defines delete per role.</summary>
+    public static readonly string[] DeleteRoles = ["Admin"];
+
+    /// <summary>
     /// <c>PUT /api/v1/{plural}/by-external-id/{system}/{value}</c>: 201 when the key is new, 200 when it already maps to a row.
     /// Order: role check, body and hooks, field validation (nothing is written until all of it passed), then one transaction:
     /// <c>INSERT … ON CONFLICT DO NOTHING</c> on <c>external_id</c> with a pre-generated entity id decides who creates the
@@ -34,7 +43,6 @@ public static class ExternalUpsert
             async Task<IResult> (string system, string value, HttpContext context, ZephyrDbContext db, ICurrentUser current) =>
             {
                 var ct = context.RequestAborted;
-                await InterimRoleGate.RequireAsync(context, InterimRoleGate.OrgWriteRoles);
                 var body = await WriteHooks.ReadBodyAsync(context.Request, ct);
                 await WriteHooks.Run(context, entityType, body);
 
@@ -101,7 +109,7 @@ public static class ExternalUpsert
                 return inserted == 1
                     ? Results.Created($"/api/v1/{plural}/{entity.Id}", binding.ToDto(entity))
                     : Results.Ok(binding.ToDto(entity));
-            }).WithWriteHooks();
+            }).RequireRoles(OrgWriteRoles).WithWriteHooks();
         return routes;
     }
 
@@ -116,7 +124,6 @@ public static class ExternalUpsert
             $"/api/v1/{binding.Info.Plural}/{{id:guid}}",
             async Task<IResult> (Guid id, HttpContext context, ZephyrDbContext db) =>
             {
-                await InterimRoleGate.RequireAsync(context, InterimRoleGate.DeleteRoles);
                 // Find ignores the soft-delete filter, so the deleted check is explicit.
                 var entity = await db.Set<T>().FindAsync([id], context.RequestAborted);
                 if (entity is null || entity.DeletedAt is not null)
@@ -127,7 +134,7 @@ public static class ExternalUpsert
                 db.Set<T>().Remove(entity);
                 await db.SaveChangesAsync(context.RequestAborted);
                 return Results.NoContent();
-            });
+            }).RequireRoles(DeleteRoles);
         return routes;
     }
 }

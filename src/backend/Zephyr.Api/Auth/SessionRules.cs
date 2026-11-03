@@ -32,10 +32,24 @@ public sealed record SessionSettings(TimeSpan Idle, TimeSpan Absolute, TimeSpan 
     }
 }
 
+/// <summary>
+/// What the permission engine needs to know about an active user (US-144): the roles, the home country and the ids of the
+/// user's team (the manager and everyone who reports to that manager, or the user and their own reports when they have no manager).
+/// </summary>
+public sealed record UserAccess(Guid Id, string[] Roles, string? HomeCountry, IReadOnlyList<Guid> Team);
+
 /// <summary>Whether a user may still use the system: active and not deleted. Shared by the session cookie and API-token authentication.</summary>
 public interface IUserStatus
 {
     Task<bool> IsActiveAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The user's roles and scope facts, or null when the user is inactive, deleted or unknown. Read together with the status and
+    /// kept for the same recheck window, so a role change reaches cookie and token sessions within it. The default (for test
+    /// doubles that only know active or not) is an active user with no roles.
+    /// </summary>
+    async Task<UserAccess?> GetAsync(Guid userId, CancellationToken ct = default) =>
+        await IsActiveAsync(userId, ct) ? new UserAccess(userId, [], null, [userId]) : null;
 
     /// <summary>Drops the cached answer so the next request reads the database (called when an admin changes <c>active</c>).</summary>
     void Forget(Guid userId);
@@ -46,9 +60,9 @@ public interface IUserStatus
 /// memory cache only holds the entries (its own expiry just frees memory), so a fake clock moves the window in tests.
 /// </summary>
 public sealed class UserStatus(
-    IMemoryCache cache, TimeProvider time, SessionSettings settings, Func<Guid, CancellationToken, Task<bool>> readActive) : IUserStatus
+    IMemoryCache cache, TimeProvider time, SessionSettings settings, Func<Guid, CancellationToken, Task<UserAccess?>> read) : IUserStatus
 {
-    private sealed record Checked(bool Active, DateTimeOffset At);
+    private sealed record Checked(UserAccess? Access, DateTimeOffset At);
 
     /// <summary>Reads <c>app_user</c> through the request's DbContext (the soft-delete filter excludes deleted users).</summary>
     public static UserStatus Create(IServiceProvider services)
@@ -58,22 +72,41 @@ public sealed class UserStatus(
             services.GetRequiredService<IMemoryCache>(),
             services.GetRequiredService<TimeProvider>(),
             services.GetRequiredService<SessionSettings>(),
-            (id, ct) => db.AppUsers.AsNoTracking().AnyAsync(u => u.Id == id && u.Active, ct));
+            (id, ct) => ReadAsync(db, id, ct));
+    }
+
+    private static async Task<UserAccess?> ReadAsync(ZephyrDbContext db, Guid id, CancellationToken ct)
+    {
+        var user = await db.AppUsers.AsNoTracking()
+            .Where(u => u.Id == id && u.Active)
+            .Select(u => new { u.Roles, u.HomeCountry, u.ManagerId })
+            .SingleOrDefaultAsync(ct);
+        if (user is null)
+        {
+            return null;
+        }
+
+        // The team is everyone under the same manager plus that manager; a user without a manager is the root of their own team.
+        var root = user.ManagerId ?? id;
+        var team = await db.AppUsers.AsNoTracking().Where(u => u.Id == root || u.ManagerId == root).Select(u => u.Id).ToListAsync(ct);
+        return new UserAccess(id, user.Roles, user.HomeCountry, team);
     }
 
     private static string Key(Guid userId) => $"zephyr:user-status:{userId:N}";
 
-    public async Task<bool> IsActiveAsync(Guid userId, CancellationToken ct = default)
+    public async Task<bool> IsActiveAsync(Guid userId, CancellationToken ct = default) => await GetAsync(userId, ct) is not null;
+
+    public async Task<UserAccess?> GetAsync(Guid userId, CancellationToken ct = default)
     {
         var now = time.GetUtcNow();
         if (cache.TryGetValue(Key(userId), out Checked? known) && known is not null && now - known.At < settings.Recheck)
         {
-            return known.Active;
+            return known.Access;
         }
 
-        var active = await readActive(userId, ct);
-        cache.Set(Key(userId), new Checked(active, now), settings.Recheck);
-        return active;
+        var access = await read(userId, ct);
+        cache.Set(Key(userId), new Checked(access, now), settings.Recheck);
+        return access;
     }
 
     public void Forget(Guid userId) => cache.Remove(Key(userId));
