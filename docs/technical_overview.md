@@ -122,6 +122,7 @@ All endpoints live under `/api/v1`, use plural camelCase nouns, and are wired wi
 | GET /auth/me | Session | 200 `{id,name,email,roles,homeCountry}`; 401 anonymous. |
 | GET /auth/denied | Anonymous | 403 problem+json (RFC 9457). |
 | GET /health | Anonymous | Health check. |
+| PATCH /api/v1/users/{id} | Admin | Body `{"active": bool}`. Requires `If-Match` and `X-Zephyr-Csrf: 1`. 403 non-admin, 428/412 ETag, 404 unknown, 422 `NOT_PATCHABLE` / `LAST_ADMIN`. Same value returns 200 with no audit row. |
 
 All other `/api/v1/*` routes require an authenticated user (default-deny fallback policy).
 
@@ -131,11 +132,17 @@ All other `/api/v1/*` routes require an authenticated user (default-deny fallbac
 3. Not found, provider `EmailTrusted=true`, claim `email_verified=true`, and an active user with that email and null issuer/subject exists: link and sign in. An email already linked to another subject is refused.
 4. Otherwise refuse (`context.Fail`, redirect to `/auth/denied`) and log the reason. Tokens are never logged.
 
-Session claims: `sub` = `app_user.id`, roles, issuer. `last_login_at` is updated on sign-in.
+Session claims: `sub` = `app_user.id`, roles, issuer, `issued_utc` (stamped at sign-in). `last_login_at` is updated on sign-in.
 
-**CSRF:** cookie-authenticated POST, PUT, PATCH and DELETE to `/api/v1/*` require header `X-Zephyr-Csrf: 1` and a same-origin `Origin`. Otherwise 403 `CSRF_REJECTED`. Bearer-token calls are exempt. GET is unaffected.
-
-**CORS:** none. The SPA is same-origin. The Vite dev server proxies `/api`, `/auth` and `/signin-oidc-*`.
+**Session limits and deactivation recheck (US-141)**
+- Code: `Auth/SessionRules.cs` (`SessionSettings`, `IUserStatus`/`UserStatus`, `SessionRules`), wired in `Auth/AuthModule.cs`.
+- Idle limit: cookie `ExpireTimeSpan` = `SESSION_IDLE_SECONDS` (default 14400). `OnValidatePrincipal` sets `ShouldRenew = true` on every valid request, so the idle window counts from the last request.
+- Absolute limit: `SESSION_ABSOLUTE_SECONDS` (default 43200) measured from `issued_utc`. Past it, the principal is rejected and the cookie is cleared. A cookie without `issued_utc` is refused.
+- Clock: cookie options and session rules use the injected `TimeProvider`; tests use `FakeTimeProvider`.
+- Deactivation recheck: `IUserStatus.IsActiveAsync` reads `app_user.active` and caches `{Active, CheckedAt}` in `IMemoryCache` for `USER_STATUS_RECHECK_SECONDS` (default 300). Active and inactive answers are both cached. `Forget(id)` evicts the entry; `PATCH /api/v1/users/{id}` calls it.
+- API tokens (US-142) must call `IUserStatus.IsActiveAsync` for the token's user. Not yet built.
+- Deactivating an admin takes a transaction-scoped advisory lock to prevent two admins deactivating each other concurrently.
+- Migrations: none for US-141.
 
 **Data model: `app_user`** (plus baseline columns)
 
@@ -158,8 +165,13 @@ No password or secret column exists. Users are pre-provisioned; there is no self
 |---|---|
 | ZEPHYR_AUTH__PROVIDERS__n__NAME / AUTHORITY / CLIENTID / CLIENTSECRET / EMAILTRUSTED | Per provider. Index 0 = `zephyr`, index 1 = `zephyr-b`. Providers only from configuration. |
 | ZEPHYR_BOOTSTRAP_ADMIN_ISSUER / ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT | Optional. Used only while no active admin exists. |
+| SESSION_IDLE_SECONDS | Optional. Idle session limit, default 14400 (4 h). |
+| SESSION_ABSOLUTE_SECONDS | Optional. Maximum session age from sign-in, default 43200 (12 h). |
+| USER_STATUS_RECHECK_SECONDS | Optional. Cache window for the active-user check, default 300 (5 min). |
 
 Secrets live only in the gitignored `.env`. Provider 1 `CLIENTSECRET` must equal `OIDC_CLIENT_SECRET`.
+
+**Deployment note (US-141):** users with a cookie from before this release must sign in once more (no `issued_utc`).
 
 ## Quality gate (US-132)
 
@@ -250,3 +262,38 @@ Integrations write idempotently through `PUT /api/v1/{plural}/by-external-id/{sy
 - **Schema:** no migration. Tables `account` (0002) and `external_id` (0001) already exist.
 - **Adding an entity:** one `EntityBinding<T>` in `EntityRegistry` plus two map calls in `Program.cs`.
 - **Account body:** `name` required; `countryCode` optional, two capital letters; PUT replaces the record, so an absent `countryCode` clears it.
+
+## Personal API tokens (US-142)
+
+**Scope:** personal API tokens let scripts and AI assistants act as a user. Full detail: `docs/api-tokens.md` and the task document for US-142.
+
+**Format and storage**
+- Token: `zph_` + 43 base64url characters (32 random bytes). Shown once at creation.
+- Table `api_token`: `id`, `user_id` (FK to `app_user`), `name`, `prefix`, `token_hash` (SHA-256 hex, 64 chars), `hash_algorithm` (text, not null, default `sha256`), `expires_at`, `revoked_at`, `last_used_at`. The plaintext is never stored.
+- Migration `0004_ApiToken` creates the table; the down migration drops it.
+- The current algorithm is `ApiTokens.HashAlgorithm`. A row is accepted only when its `hash_algorithm` equals it. Comparison is by `CryptographicOperations.FixedTimeEquals` after an indexed lookup on `token_hash`.
+
+**Endpoints**
+
+| Method and route | Input | Success | Errors |
+|---|---|---|---|
+| `POST /api/v1/me/tokens` | `name` (required, non-blank, bounded length), `expiresInDays` (optional integer, 1–365, default 90) | 201 with `token` (plaintext), `prefix`, `expiresAt`; `Cache-Control: no-store` | 422 `VALIDATION`; 422 `OUT_OF_RANGE` (field `expiresInDays`); 422 `TOKEN_LIMIT` (11th active token); 403 when called with a token instead of a session cookie |
+| `GET /api/v1/me/tokens` | — | 200 list with `id`, `name`, `prefix`, `expiresAt`, `revokedAt`, `lastUsedAt`; never `token` | 401 |
+| `DELETE /api/v1/me/tokens/{id}` | — | 204 | 404 for unknown or foreign id; 401 |
+
+**Authentication**
+- Default scheme `Zephyr` (policy scheme in `AuthModule.cs`): `Authorization: Bearer zph_…` goes to scheme `ApiToken` (`ApiTokenHandler`); everything else goes to the session cookie. Sign-in and sign-out stay on the cookie.
+- Each bearer request is looked up in the database, so revocation takes effect immediately. Refused (401 with `WWW-Authenticate: Bearer`) when: expired, revoked, algorithm not current, owner deactivated or deleted.
+- Principal is built with `UserMatching.ToPrincipal(user, scheme)`; the token carries the owner's permissions.
+- `last_used_at` is updated with a direct UPDATE at most once per minute and does not change `updated_at`.
+
+**Concurrency and audit**
+- Creation takes a PostgreSQL advisory transaction lock keyed per user, so concurrent creates cannot exceed 10 active tokens.
+- Create and revoke write `audit_log` rows: `api_token_created`, `api_token_revoked`, containing the prefix only. `audit_log` is in Respawn `TablesToIgnore`.
+
+**Testing**
+- `ApiTokenTests.cs` covers AC 1–5 and a Respawn regression test (`api_token` cleared together with `app_user`). DB-backed tests require `ZEPHYR_TEST_DB`; CI sets `ZEPHYR_REQUIRE_DB=1`.
+
+**Operations**
+- Post-deploy manual step: add the GitHub custom secret-scanning pattern `zph_[A-Za-z0-9_-]{43}` (see `docs/api-tokens.md`).
+- Changing the hash algorithm is not transparent: rows with another `hash_algorithm` are refused. A dual-algorithm lookup is needed before such a change.

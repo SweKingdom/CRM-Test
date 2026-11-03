@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 2026-11-03 — US-142 Personal API tokens: users can create, list and revoke `zph_` API tokens (max 10 active, 90-day default, 365-day max); only the SHA-256 hash is stored.
+- 2026-11-03 — US-141 Session limits and deactivation recheck: sessions end after 4 h idle or 12 h after sign-in; a deactivated user loses access within 5 min; `PATCH /api/v1/users/{id}` activates or deactivates a user (Admin). Limits are set by `SESSION_IDLE_SECONDS`, `SESSION_ABSOLUTE_SECONDS`, `USER_STATUS_RECHECK_SECONDS`. Users must sign in once more after this release. Token refusal is completed in US-142.
 - 2026-11-03 — US-135 Upsert by external ID and soft delete: `PUT /api/v1/accounts/by-external-id/{system}/{value}` creates (201) or updates (200) an account without duplicates; `DELETE /api/v1/accounts/{id}` soft-deletes (204); an upsert on a deleted record returns 409 `RECORD_DELETED`. Upsert is gated by an interim role check (Admin, Integration) and DELETE is Admin only until US-143/144 land.
 - 2026-11-03 — US-134 Money type and exchange rates (SEK base): amounts carry their currency and SEK value (half-up, 2 decimals); exchange rates for six currencies are seeded for 2020-01 to 2030-12 and admins can edit them; missing rate returns 422 `MISSING_EXCHANGE_RATE`.
 - 2026-11-03 — US-131 Synthetic volume seed (~56,000 records, ~105,000 time entries): `npm run seed -- --volume` loads synthetic test data with a reset guard and skips tables that do not exist yet.
