@@ -8,6 +8,12 @@ Zephyr does not have its own passwords. You sign in through the organisation's i
 2. Enter your work account in the identity provider's sign-in page.
 3. You are returned to Zephyr and see your name in the header.
 
+**How long you stay signed in**
+- Your session ends after **4 hours** without activity. Any action you take in Zephyr keeps it open.
+- Your session ends **12 hours** after you signed in, even if you have been active. You then see the sign-in page again.
+- If an administrator deactivates your account, you lose access within **5 minutes**.
+- Sessions that started before this change must sign in once more.
+
 **Tips**
 - If you have no Zephyr account yet, the sign-in is refused. Ask an administrator to create your user.
 - If you see the message "Your account is not set up in Zephyr. Contact an administrator.", your account exists in the identity provider but is not linked to a Zephyr user, or it is deactivated.

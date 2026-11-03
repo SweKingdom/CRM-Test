@@ -122,6 +122,7 @@ All endpoints live under `/api/v1`, use plural camelCase nouns, and are wired wi
 | GET /auth/me | Session | 200 `{id,name,email,roles,homeCountry}`; 401 anonymous. |
 | GET /auth/denied | Anonymous | 403 problem+json (RFC 9457). |
 | GET /health | Anonymous | Health check. |
+| PATCH /api/v1/users/{id} | Admin | Body `{"active": bool}`. Requires `If-Match` and `X-Zephyr-Csrf: 1`. 403 non-admin, 428/412 ETag, 404 unknown, 422 `NOT_PATCHABLE` / `LAST_ADMIN`. Same value returns 200 with no audit row. |
 
 All other `/api/v1/*` routes require an authenticated user (default-deny fallback policy).
 
@@ -131,11 +132,17 @@ All other `/api/v1/*` routes require an authenticated user (default-deny fallbac
 3. Not found, provider `EmailTrusted=true`, claim `email_verified=true`, and an active user with that email and null issuer/subject exists: link and sign in. An email already linked to another subject is refused.
 4. Otherwise refuse (`context.Fail`, redirect to `/auth/denied`) and log the reason. Tokens are never logged.
 
-Session claims: `sub` = `app_user.id`, roles, issuer. `last_login_at` is updated on sign-in.
+Session claims: `sub` = `app_user.id`, roles, issuer, `issued_utc` (stamped at sign-in). `last_login_at` is updated on sign-in.
 
-**CSRF:** cookie-authenticated POST, PUT, PATCH and DELETE to `/api/v1/*` require header `X-Zephyr-Csrf: 1` and a same-origin `Origin`. Otherwise 403 `CSRF_REJECTED`. Bearer-token calls are exempt. GET is unaffected.
-
-**CORS:** none. The SPA is same-origin. The Vite dev server proxies `/api`, `/auth` and `/signin-oidc-*`.
+**Session limits and deactivation recheck (US-141)**
+- Code: `Auth/SessionRules.cs` (`SessionSettings`, `IUserStatus`/`UserStatus`, `SessionRules`), wired in `Auth/AuthModule.cs`.
+- Idle limit: cookie `ExpireTimeSpan` = `SESSION_IDLE_SECONDS` (default 14400). `OnValidatePrincipal` sets `ShouldRenew = true` on every valid request, so the idle window counts from the last request.
+- Absolute limit: `SESSION_ABSOLUTE_SECONDS` (default 43200) measured from `issued_utc`. Past it, the principal is rejected and the cookie is cleared. A cookie without `issued_utc` is refused.
+- Clock: cookie options and session rules use the injected `TimeProvider`; tests use `FakeTimeProvider`.
+- Deactivation recheck: `IUserStatus.IsActiveAsync` reads `app_user.active` and caches `{Active, CheckedAt}` in `IMemoryCache` for `USER_STATUS_RECHECK_SECONDS` (default 300). Active and inactive answers are both cached. `Forget(id)` evicts the entry; `PATCH /api/v1/users/{id}` calls it.
+- API tokens (US-142) must call `IUserStatus.IsActiveAsync` for the token's user. Not yet built.
+- Deactivating an admin takes a transaction-scoped advisory lock to prevent two admins deactivating each other concurrently.
+- Migrations: none for US-141.
 
 **Data model: `app_user`** (plus baseline columns)
 
@@ -158,8 +165,13 @@ No password or secret column exists. Users are pre-provisioned; there is no self
 |---|---|
 | ZEPHYR_AUTH__PROVIDERS__n__NAME / AUTHORITY / CLIENTID / CLIENTSECRET / EMAILTRUSTED | Per provider. Index 0 = `zephyr`, index 1 = `zephyr-b`. Providers only from configuration. |
 | ZEPHYR_BOOTSTRAP_ADMIN_ISSUER / ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT | Optional. Used only while no active admin exists. |
+| SESSION_IDLE_SECONDS | Optional. Idle session limit, default 14400 (4 h). |
+| SESSION_ABSOLUTE_SECONDS | Optional. Maximum session age from sign-in, default 43200 (12 h). |
+| USER_STATUS_RECHECK_SECONDS | Optional. Cache window for the active-user check, default 300 (5 min). |
 
 Secrets live only in the gitignored `.env`. Provider 1 `CLIENTSECRET` must equal `OIDC_CLIENT_SECRET`.
+
+**Deployment note (US-141):** users with a cookie from before this release must sign in once more (no `issued_utc`).
 
 ## Quality gate (US-132)
 
