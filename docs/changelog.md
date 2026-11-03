@@ -1,5 +1,6 @@
 ## Unreleased
 
+- 2026-11-03 — US-144 Permission engine for API and UI routes: one engine enforces scope and role rules for API, search and UI routes; `/api/v1/me/permissions` added; default-deny endpoint test added.
 - 2026-11-03 — US-138 Claude usage log per story and PR description note: added a "Claude usage" section to the PR template; usage is totalled with `node tools/claude-usage/cli.mjs report` (no new script or format).
 - 2026-11-03 — US-143 Permission model: roles, scopes and rules matrix: seven roles and a 665-row permission matrix are stored and seeded idempotently at API start; the enforcement engine is not yet built.
 - 2026-11-03 — US-142 Personal API tokens: users can create, list and revoke `zph_` API tokens (max 10 active, 90-day default, 365-day max); only the SHA-256 hash is stored.

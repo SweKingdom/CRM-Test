@@ -98,15 +98,18 @@ Use a personal API token when a script or your AI assistant needs to act as you.
 
 ## Who can see and change what
 
-Each user has one or more roles: Salesperson, BDR, PM, Consultant, Finance, Management or Admin. A role decides which records you can read and change, and how far that reaches: only your own records, your team, your contracting country, or the whole organisation.
+Access is decided by your role. The same rules apply in the screens and in the API.
 
-- Your role determines what you see in each area (accounts and contacts, leads, opportunities, projects, time entries).
-- Where a row shows "none", you cannot see or change that kind of record.
-- Admin manages users, roles and reference data. Admin cannot edit business records or approve time.
-- Finance can reopen approved time entries, lock and unlock periods, and export approved billable hours. Finance cannot edit hours or notes.
-- Management can read the organisation's records and use the dashboards.
+| What you try to do | What happens |
+|---|---|
+| Open a page you are not allowed to use | The **Access denied** page is shown. |
+| Open or change a record you cannot see | The record is shown as not found. |
+| See a record you can view but not change | The action button is hidden, and a change is refused. |
+| Use a personal API token | The token has exactly the permissions of its owner. |
 
-Note: the permission rules are being rolled out. Access enforcement in the screens is not yet active, and the rules are still awaiting sign-off by the product owner. For the full matrix, see `docs/permissions.md`.
+**Tips**
+- If your role was changed by an administrator, the new access applies within about 5 minutes. Sign out and back in if you need it sooner.
+- Search results and lists only show records within your scope, and the totals count only those records.
 
 ## Recording Claude usage on a pull request
 
