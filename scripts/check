@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Zephyr quality gate: the one script every PR passes, locally and in GitHub Actions (nothing is deployed).
 # Runs the eight steps below in this order, prints PASS/FAIL/SKIP per step and a summary, exits 1 if any step failed.
+# The tests step includes the backend permission tests (dotnet test, US-146). `scripts/check --ui` adds a ninth step, ui:
+# the Playwright permission suite against the running stack. It fails, it never skips, while that suite does not exist.
 # A step whose target does not exist yet prints "SKIP (not yet applicable ...)". It is never a silent PASS.
 # REQUIRE_ALL=1 (set in CI) turns a SKIP into a FAIL when the target exists but a tool is missing.
 # "needs Keycloak" SKIPs stay SKIPs: CI does not start Keycloak (locally: docker compose up -d keycloak).
@@ -59,7 +61,7 @@ step_lint() {
   return $rc
 }
 
-# 2. Tests: dotnet test (integration tests against the test database) and the Node tests.
+# 2. Tests: dotnet test (integration tests, the permission tests included, against the test database) and the Node tests.
 step_tests() {
   install_deps . || return 1
   ensure_test_db || return 1
@@ -73,18 +75,21 @@ step_seeds() {
   "$python" scripts/validate_seeds.py
 }
 
-# 4. OpenAPI regenerate: the generator writes docs/api/openapi.json; any difference from the committed file fails.
+# 4. OpenAPI regenerate: the generator writes a temporary file; any difference from the committed docs/api/openapi.json fails.
 step_openapi_regenerate() {
   [ -f "$OPENAPI_GENERATOR" ] || { skip na "not yet applicable: no generator at $OPENAPI_GENERATOR"; return; }
-  node "$OPENAPI_GENERATOR" "$OPENAPI_FILE" || return 1
-  if [ -n "$(git status --porcelain -- "$OPENAPI_FILE")" ]; then
-    echo "$OPENAPI_FILE differs from the committed copy. Commit the regenerated file."
-    git --no-pager diff --stat -- "$OPENAPI_FILE"
-    return 1
+  local generated rc=0
+  generated=$(mktemp)
+  node "$OPENAPI_GENERATOR" --out "$generated" || { rm -f "$generated"; return 1; }
+  if ! diff -u --strip-trailing-cr "$OPENAPI_FILE" "$generated"; then
+    echo "$OPENAPI_FILE is not what the generator produces: run generate (node $OPENAPI_GENERATOR) and commit the result. Never edit the file by hand."
+    rc=1
   fi
+  rm -f "$generated"
+  return $rc
 }
 
-# 5. Spectral (pinned version; rules in .spectral.yaml)
+# 5. Spectral (pinned version; rules in .spectral.yaml, which Spectral finds in the working directory)
 step_spectral() {
   [ -f "$OPENAPI_FILE" ] || { skip na "not yet applicable: no $OPENAPI_FILE"; return; }
   npx --yes "@stoplight/spectral-cli@$SPECTRAL_VERSION" lint "$OPENAPI_FILE"
@@ -151,6 +156,14 @@ step_vulnerabilities() {
   return $rc
 }
 
+# 9. ui (only with --ui): the Playwright permission suite in src/frontend/e2e, signed in as the seven Keycloak test users
+# against the running stack. Requested and missing is a failure, so asking for it never passes silently.
+step_ui() {
+  [ -d src/frontend/e2e ] || { echo "--ui was requested but src/frontend/e2e does not exist yet (the Playwright permission suite, US-146 AC 2)."; return 1; }
+  has_script src/frontend e2e || { echo "--ui was requested but src/frontend/package.json has no 'e2e' script."; return 1; }
+  install_deps src/frontend && npm --prefix src/frontend run e2e --silent
+}
+
 record() { RESULTS+=("$1|$2|$3"); echo "$1 $2${3:+ ($3)}"; }
 
 run_step() {
@@ -191,14 +204,19 @@ summary() {
 }
 
 main() {
-  local step
+  local step steps=("${STEPS[@]}")
+  case "${1:-}" in
+    "") ;;
+    --ui) steps+=(ui) ;;
+    *) echo "Usage: scripts/check [--ui]"; return 1 ;;
+  esac
   cd "$ROOT" || return 1
   if [ "${CI:-}" = true ]; then export ZEPHYR_REQUIRE_DB=1; fi
-  for step in "${STEPS[@]}"; do run_step "$step"; done
+  for step in "${steps[@]}"; do run_step "$step"; done
   summary
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-  main
+  main "$@"
   exit $?
 fi

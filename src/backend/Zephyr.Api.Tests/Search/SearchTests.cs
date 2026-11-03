@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
+using Zephyr.Api.Permissions;
 using Zephyr.Api.Search;
 using Zephyr.Api.Tests.Common;
 using Zephyr.Api.Tests.Support;
@@ -20,7 +21,19 @@ namespace Zephyr.Api.Tests.Search;
 [Collection("db")]
 public class SearchTests(DbFixture fixture) : IAsyncLifetime
 {
-    public Task InitializeAsync() => fixture.ResetAsync();
+    private static readonly string[] All = ["country", "hidden", "nowhere", "owned", "team"];
+    private static readonly string[] Owned = ["owned"];
+    private static readonly string[] OwnedAndTeam = ["owned", "team"];
+    private static readonly string[] CountryOnly = ["country"];
+    private static readonly string[] Nothing = [];
+
+    public async Task InitializeAsync()
+    {
+        await fixture.ResetAsync();
+        // The search scope comes from the permission matrix, which the reset empties.
+        await using var db = fixture.CreateContext();
+        await PermissionSeeder.SeedAsync(db);
+    }
 
     public Task DisposeAsync() => Task.CompletedTask;
 
@@ -42,7 +55,7 @@ public class SearchTests(DbFixture fixture) : IAsyncLifetime
 
     // ---- helpers ----
 
-    private async Task<Guid> SeedUserAsync(string? role, string? home = "SE", bool active = true)
+    private async Task<Guid> SeedUserAsync(string? role, string? home = "SE", bool active = true, Guid? manager = null)
     {
         await using var db = fixture.CreateContext();
         var user = new AppUser
@@ -52,7 +65,8 @@ public class SearchTests(DbFixture fixture) : IAsyncLifetime
             Email = $"{Guid.NewGuid():N}@example.test",
             Roles = role is null ? [] : [role],
             HomeCountry = home,
-            Active = active
+            Active = active,
+            ManagerId = manager
         };
         db.AppUsers.Add(user);
         await db.SaveChangesAsync();
@@ -207,63 +221,93 @@ public class SearchTests(DbFixture fixture) : IAsyncLifetime
     // ---- AC 4: permissions ----
 
     [DbFact]
-    public async Task Ac4_Accounts_outside_the_callers_scope_never_appear_in_the_full_text_or_the_trigram_step()
+    public async Task Ac4_Every_entity_type_is_filtered_by_the_scope_the_matrix_gives_the_caller_in_both_steps()
     {
-        var seller = await SeedUserAsync("Salesperson", "SE");
-        var norwegian = await SeedUserAsync("BDR", "NO");
-        var management = await SeedUserAsync("Management", null);
-        await AddAccountAsync("Leak Probe SE", "SE");
-        await AddAccountAsync("Leak Probe NO", "NO");
-        await AddAccountAsync("Leak Probe None", null);
+        // Expected tags per role and type follow permission-matrix.csv (read): org, own, team, country or none.
+        var callers = new (string Role, string? Home, string[][] ByType)[]
+        {
+            // account, contact, lead, opportunity, project
+            ("Salesperson", "SE", [All, All, CountryOnly, CountryOnly, Owned]),
+            ("Salesperson", null, [All, All, Nothing, Nothing, Owned]), // no home country: a country scope matches nothing
+            ("BDR", "SE", [All, All, OwnedAndTeam, Owned, Nothing]),
+            ("PM", "SE", [All, All, Nothing, Owned, Owned]),
+            ("Consultant", "SE", [All, All, Nothing, Nothing, Owned]),
+            ("Finance", "SE", [All, All, Nothing, All, All]),
+            ("Management", "SE", [All, All, All, All, All]),
+            ("Admin", "SE", [All, All, All, All, All])
+        };
+        var manager = await SeedUserAsync("Management");
+        var teammate = await SeedUserAsync("PM", manager: manager);
+        var other = Guid.NewGuid();
         await using var app = await StartAsync();
         var client = app.GetTestClient();
 
-        foreach (var query in new[] { "leak probe", "leek probe" }) // the second one only matches in the trigram step
+        foreach (var (role, home, byType) in callers)
         {
-            Assert.Equal("Leak Probe SE", Join((await SearchAsync(client, seller, query)).Titles));
-            Assert.Equal("Leak Probe NO", Join((await SearchAsync(client, norwegian, query)).Titles));
+            var caller = await SeedUserAsync(role, home, manager: manager);
+            await ScalarAsync("delete from search_document");
+            foreach (var type in SearchEndpoints.Types)
+            {
+                await ScalarAsync($"select search_upsert('{type}', '{Guid.NewGuid()}', 'Leak Probe {type} owned', null, '', '{caller}', null, 'NO', null, now())");
+                await ScalarAsync($"select search_upsert('{type}', '{Guid.NewGuid()}', 'Leak Probe {type} team', null, '', '{teammate}', null, 'NO', null, now())");
+                await ScalarAsync($"select search_upsert('{type}', '{Guid.NewGuid()}', 'Leak Probe {type} country', null, '', '{other}', null, 'SE', null, now())");
+                await ScalarAsync($"select search_upsert('{type}', '{Guid.NewGuid()}', 'Leak Probe {type} hidden', null, '', '{other}', null, 'NO', null, now())");
+                await ScalarAsync($"select search_upsert('{type}', '{Guid.NewGuid()}', 'Leak Probe {type} nowhere', null, '', null, null, null, null, now())");
+            }
+
+            for (var i = 0; i < SearchEndpoints.Types.Length; i++)
+            {
+                var type = SearchEndpoints.Types[i];
+                var expected = Join(byType[i].Select(tag => $"Leak Probe {type} {tag}").Order());
+                foreach (var query in new[] { "leak probe", "leek probe" }) // the second one only matches in the trigram step
+                {
+                    var found = Join((await SearchAsync(client, caller, query, $"&types={type}")).Titles.Order());
+                    Assert.True(expected == found, $"{role} (home {home ?? "none"}) searching {type} for '{query}': expected [{expected}] but found [{found}]");
+                }
+            }
+        }
+    }
+
+    [DbFact]
+    public async Task Ac4_Accounts_through_the_real_trigger_carry_the_creator_as_owner_and_an_account_without_country_is_found_by_org_scopes()
+    {
+        var creator = Guid.NewGuid();
+        await using (var db = fixture.CreateContext(creator))
+        {
+            db.Accounts.Add(new Account { Name = "Owned By Creator", CountryCode = "SE" });
+            await db.SaveChangesAsync();
+        }
+
+        await AddAccountAsync("Leak Probe SE", "SE");
+        await AddAccountAsync("Leak Probe NO", "NO");
+        await AddAccountAsync("Leak Probe None", null);
+        var seller = await SeedUserAsync("Salesperson", "SE");
+        var management = await SeedUserAsync("Management", null);
+        await using var app = await StartAsync();
+        var client = app.GetTestClient();
+
+        Assert.Equal(creator, await ScalarAsync("select owner_id from search_document where title = 'Owned By Creator'"));
+        foreach (var query in new[] { "leak probe", "leek probe" })
+        {
+            Assert.Equal(3, (await SearchAsync(client, seller, query)).Titles.Count); // Salesperson reads accounts org-wide
             Assert.Equal(3, (await SearchAsync(client, management, query)).Titles.Count);
         }
     }
 
     [DbFact]
-    public async Task Ac4_Every_entity_type_is_filtered_by_owner_and_country_in_the_index()
-    {
-        var seller = await SeedUserAsync("Salesperson", "SE");
-        var management = await SeedUserAsync("Management", null);
-        var other = Guid.NewGuid();
-        foreach (var type in SearchEndpoints.Types)
-        {
-            await ScalarAsync($"select search_upsert('{type}', '{Guid.NewGuid()}', 'Contract {type} owned', null, '', '{seller}', null, 'NO', null, now())");
-            await ScalarAsync($"select search_upsert('{type}', '{Guid.NewGuid()}', 'Contract {type} country', null, '', '{other}', null, 'SE', null, now())");
-            await ScalarAsync($"select search_upsert('{type}', '{Guid.NewGuid()}', 'Contract {type} hidden', null, '', '{other}', null, 'NO', null, now())");
-            await ScalarAsync($"select search_upsert('{type}', '{Guid.NewGuid()}', 'Contract {type} nowhere', null, '', null, null, null, null, now())");
-        }
-
-        await using var app = await StartAsync();
-        var client = app.GetTestClient();
-
-        foreach (var type in SearchEndpoints.Types)
-        {
-            var seen = (await SearchAsync(client, seller, "contract", $"&types={type}")).Titles;
-            Assert.Equal($"Contract {type} country | Contract {type} owned", Join(seen.Order()));
-            Assert.Equal(4, (await SearchAsync(client, management, "contract", $"&types={type}")).Titles.Count);
-        }
-
-        Assert.Equal(10, (await SearchAsync(client, seller, "contract")).Titles.Count);
-    }
-
-    [DbFact]
-    public async Task Ac4_Callers_without_a_role_that_may_search_are_refused()
+    public async Task Ac4_Callers_without_a_role_that_may_search_are_refused_and_a_type_filter_never_reveals_hidden_types()
     {
         await AddAccountAsync("Visible Corp");
         var callers = new List<Guid?>
         {
             await SeedUserAsync(null),
             await SeedUserAsync("Unknown role"),
+            await SeedUserAsync("Integration"), // an API client, not a matrix role
             await SeedUserAsync("Management", active: false),
-            Guid.NewGuid()
+            Guid.NewGuid(),
+            null // no session: the real app answers 401 before the route (MatrixCoverageTests), this host has no default-deny
         };
+        var consultant = await SeedUserAsync("Consultant");
         await using var app = await StartAsync();
         var client = app.GetTestClient();
 
@@ -272,7 +316,10 @@ public class SearchTests(DbFixture fixture) : IAsyncLifetime
             await AssertProblem(await GetAsync(client, "q=visible", caller), HttpStatusCode.Forbidden);
         }
 
-        await AssertProblem(await GetAsync(client, "q=visible", null), HttpStatusCode.Unauthorized);
+        // A Consultant reads no leads: asking for leads only is an empty list, not a 403.
+        var none = await SearchAsync(client, consultant, "visible", "&types=lead");
+        Assert.Empty(none.Titles);
+        Assert.Contains("Visible Corp", (await SearchAsync(client, consultant, "visible")).Titles);
     }
 
     // ---- AC 5: speed (the 100-query benchmark is tools/search-benchmark/bench.mjs) ----

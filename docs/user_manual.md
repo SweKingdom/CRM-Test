@@ -71,27 +71,36 @@ Amounts are shown in their own currency and in SEK, so totals can be compared.
 
 ## Managing your personal API tokens
 
-Use a personal API token when a script or your AI assistant needs to act as you. A token has your permissions and nothing more.
+Not changed by US-136. The API description is for integrators; see the technical overview section "API description (OpenAPI)".
 
-**How to create a token**
-1. Sign in to Zephyr in the browser.
-2. Open your profile and go to **API tokens**. (The API equivalent is `POST /api/v1/me/tokens`.)
-3. Enter a **Name** for the token so you can recognise it later.
-4. Optional: enter **Expires in (days)**, from 1 to 365. If you leave it empty, the token expires after 90 days.
-5. Select **Create token**.
-6. Copy the token shown. It starts with `zph_`. **It is shown only once.** Store it in your script or secret store.
+## Who can see and change what
 
-**Tips and warnings**
-- You can have at most 10 active tokens. To create another one, revoke an old one first.
-- Expired and revoked tokens do not count towards the limit.
-- The token list shows the **Prefix** and **Expires** date only. You cannot see the full token again; create a new one if you lose it.
-- Never paste a token into a chat, ticket or code repository. GitHub is set up to flag `zph_` tokens, but treat them as passwords.
+Access depends on your role and on the approver assignments.
 
-**How to revoke a token**
-1. Open **API tokens** on your profile.
-2. Select **Revoke** on the token.
-3. The token stops working immediately. Any script that uses it receives "unauthorised" and must be updated.
+| What you want to do | Who can do it |
+|---|---|
+| Delete an account | Administrators only |
+| Add or remove a time approver on a project | Administrators only (for now) |
+| See the time entries of a project you approve | That project's approvers |
+| Approve time for a project | That project's approvers and their delegates |
+| Delegate your approval rights for a date range | An approver of at least one project |
+| See a delegation you gave or received | The delegator, the delegate, and administrators |
+| Revoke a delegation | The delegator and administrators |
 
-**What happens when a token is refused**
-- An expired token, a revoked token, or a token for a deactivated account is refused with an "unauthorised" response.
-- Creating a token with more than 365 days is refused with a message about the expiry range.
+**Notes**
+- You cannot approve your own time, even when you hold delegated approval rights.
+- A delegation covers only the projects you approve yourself. It does not pass on rights you received from someone else.
+- A delegation is active on both its start date and its end date, using Swedish time. It ends at once when it is revoked.
+- Time entries of people who are not your approver or delegate are not shown to you.
+- The project's PM will be able to manage approvers once the project register is in place (US-161).
+
+## Recording Claude usage on a pull request
+
+Every pull request for a story records the Claude usage for that story.
+
+1. Open the pull request description.
+2. Find the **Claude usage** section.
+3. Run `node tools/claude-usage/cli.mjs report` in the repository and find the total for your story.
+4. Enter the totals in **Tokens in**, **Tokens out** and **Cost (USD)**.
+
+Tip: the usage files are written automatically by the pre-commit hook. Do not edit them by hand.

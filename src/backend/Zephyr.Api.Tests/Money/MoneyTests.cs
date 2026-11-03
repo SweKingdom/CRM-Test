@@ -1,8 +1,6 @@
 using System.Globalization;
 using System.Net;
-using System.Security.Claims;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -12,31 +10,15 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Npgsql;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
 using Zephyr.Api.Finance;
+using Zephyr.Api.Permissions;
+using Zephyr.Api.Tests.Common;
 using Zephyr.Api.Tests.Support;
 
 namespace Zephyr.Api.Tests.Finance;
-
-/// <summary>Stands in for the real sign-in: X-Test-Role signs in a user with that role; without the header the request is anonymous.</summary>
-public sealed class RoleAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
-    : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
-{
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
-    {
-        if (!Request.Headers.TryGetValue("X-Test-Role", out var role))
-        {
-            return Task.FromResult(AuthenticateResult.NoResult());
-        }
-
-        var identity = new ClaimsIdentity([new Claim(ClaimTypes.Role, role.ToString())], "Test");
-        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), "Test")));
-    }
-}
 
 /// <summary>US-134: money value, conversion to SEK, the exchange-rate table and its endpoints.</summary>
 [Collection("db")]
@@ -64,12 +46,18 @@ public class MoneyTests(DbFixture fixture) : IAsyncLifetime
 
     private static async Task<JsonElement> ReadJson(HttpResponseMessage response) => Parse(await response.Content.ReadAsStringAsync());
 
-    private static async Task<WebApplication> StartAsync()
+    /// <summary>The real rate routes behind the permission engine, with the real matrix in the database and a test sign-in (X-Test-User).</summary>
+    private async Task<WebApplication> StartAsync()
     {
+        await using (var db = fixture.CreateContext())
+        {
+            await PermissionSeeder.SeedAsync(db);
+        }
+
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddApiConventions();
-        builder.Services.AddAuthentication("Test").AddScheme<AuthenticationSchemeOptions, RoleAuthHandler>("Test", null);
+        builder.Services.AddAuthentication("Test").AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", null);
         var app = builder.Build();
         app.UseApiConventions();
         app.UseAuthentication();
@@ -78,7 +66,17 @@ public class MoneyTests(DbFixture fixture) : IAsyncLifetime
         return app;
     }
 
-    private static HttpRequestMessage Send(HttpMethod method, string url, string? role, string? json = null)
+    /// <summary>An active user holding <paramref name="role"/>; the permission engine reads the role from this row.</summary>
+    private async Task<Guid> SeedUserAsync(string role)
+    {
+        await using var db = fixture.CreateContext();
+        var user = new AppUser { Id = Guid.NewGuid(), Name = role, Email = $"{Guid.NewGuid():N}@example.test", Roles = [role] };
+        db.AppUsers.Add(user);
+        await db.SaveChangesAsync();
+        return user.Id;
+    }
+
+    private static HttpRequestMessage Send(HttpMethod method, string url, Guid? user, string? json = null)
     {
         var request = new HttpRequestMessage(method, url);
         if (json is not null)
@@ -86,9 +84,9 @@ public class MoneyTests(DbFixture fixture) : IAsyncLifetime
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
         }
 
-        if (role is not null)
+        if (user is not null)
         {
-            request.Headers.Add("X-Test-Role", role);
+            request.Headers.Add("X-Test-User", user.ToString());
         }
 
         return request;
@@ -289,20 +287,22 @@ public class MoneyTests(DbFixture fixture) : IAsyncLifetime
     public async Task Admin_sets_a_rate_then_changes_it_and_the_list_and_stamping_use_it()
     {
         await SeedCurrenciesAsync("USD");
+        var admin = await SeedUserAsync("Admin");
+        var sales = await SeedUserAsync("Salesperson");
         await using var app = await StartAsync();
         var client = app.GetTestClient();
 
-        var created = await client.SendAsync(Send(HttpMethod.Put, $"{Url}/USD/2026-11", "Admin", """{"rateToSek":"10.5"}"""));
+        var created = await client.SendAsync(Send(HttpMethod.Put, $"{Url}/USD/2026-11", admin, """{"rateToSek":"10.5"}"""));
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var body = await ReadJson(created);
         Assert.Equal("USD", body.GetProperty("currency").GetString());
         Assert.Equal("2026-11-01", body.GetProperty("month").GetString());
         Assert.Equal("10.500000", body.GetProperty("rateToSek").GetString());
 
-        var updated = await client.SendAsync(Send(HttpMethod.Put, $"{Url}/usd/2026-11", "Admin", """{"rateToSek":10}"""));
+        var updated = await client.SendAsync(Send(HttpMethod.Put, $"{Url}/usd/2026-11", admin, """{"rateToSek":10}"""));
         Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
 
-        var list = await ReadJson(await client.SendAsync(Send(HttpMethod.Get, $"{Url}?filter[currency][eq]=USD", "Sales")));
+        var list = await ReadJson(await client.SendAsync(Send(HttpMethod.Get, $"{Url}?filter[currency][eq]=USD", sales)));
         var item = Assert.Single(list.GetProperty("items").EnumerateArray());
         Assert.Equal("10.000000", item.GetProperty("rateToSek").GetString());
 
@@ -315,6 +315,7 @@ public class MoneyTests(DbFixture fixture) : IAsyncLifetime
     public async Task A_rate_that_is_not_valid_is_a_422_naming_the_field_and_changes_nothing()
     {
         await SeedCurrenciesAsync("USD");
+        var admin = await SeedUserAsync("Admin");
         await using var app = await StartAsync();
         var client = app.GetTestClient();
         var cases = new (string Path, string Body, string Field)[]
@@ -333,7 +334,7 @@ public class MoneyTests(DbFixture fixture) : IAsyncLifetime
 
         foreach (var (path, body, field) in cases)
         {
-            var response = await client.SendAsync(Send(HttpMethod.Put, $"{Url}/{path}", "Admin", body));
+            var response = await client.SendAsync(Send(HttpMethod.Put, $"{Url}/{path}", admin, body));
 
             Assert.Equal((HttpStatusCode)422, response.StatusCode);
             Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
@@ -348,18 +349,19 @@ public class MoneyTests(DbFixture fixture) : IAsyncLifetime
     public async Task Only_a_signed_in_admin_can_set_a_rate_and_only_a_signed_in_user_can_read_them()
     {
         await SeedCurrenciesAsync("USD");
+        var sales = await SeedUserAsync("Salesperson");
         await using var app = await StartAsync();
         var client = app.GetTestClient();
         const string body = """{"rateToSek":"10"}""";
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(Send(HttpMethod.Put, $"{Url}/USD/2026-11", null, body))).StatusCode);
-        var notAdmin = await client.SendAsync(Send(HttpMethod.Put, $"{Url}/USD/2026-11", "Sales", body));
+        var notAdmin = await client.SendAsync(Send(HttpMethod.Put, $"{Url}/USD/2026-11", sales, body));
         Assert.Equal(HttpStatusCode.Forbidden, notAdmin.StatusCode);
         Assert.Equal("application/problem+json", notAdmin.Content.Headers.ContentType?.MediaType);
         Assert.Equal(0, await RateCountAsync());
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(Send(HttpMethod.Get, Url, null))).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(Send(HttpMethod.Get, Url, "Sales"))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(Send(HttpMethod.Get, Url, sales))).StatusCode);
     }
 
     [DbFact]

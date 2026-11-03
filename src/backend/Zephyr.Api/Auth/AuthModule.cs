@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
+using Zephyr.Api.Permissions;
 
 namespace Zephyr.Api.Auth;
 
@@ -120,7 +121,7 @@ public static class AuthModule
         {
             await context.SignOutAsync(CookieScheme);
             return Results.NoContent();
-        });
+        }).AsMeEndpoint();
 
         app.MapGet("/auth/me", async (ICurrentUser current, ZephyrDbContext db) =>
         {
@@ -129,7 +130,7 @@ public static class AuthModule
             return user is { Active: true }
                 ? Results.Ok(new { user.Id, user.Name, user.Email, user.Roles, user.HomeCountry })
                 : Results.Unauthorized();
-        });
+        }).AsMeEndpoint();
 
         app.MapGet("/auth/denied", (HttpContext context, string? reason) =>
             Problems.WriteAsync(context, StatusCodes.Status403Forbidden, "Forbidden",

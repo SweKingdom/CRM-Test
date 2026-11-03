@@ -29,7 +29,7 @@ public class SearchDocument : Migration
             $$;
             """);
 
-        // owner_id, account_id, country_code and business_unit are the contract of the permission predicate (US-144).
+        // owner_id, account_id, country_code and business_unit are what the read scope of the permission matrix compares with (US-144).
         migrationBuilder.Sql(
             """
             create table search_document (
@@ -109,10 +109,12 @@ public class SearchDocument : Migration
             $fn$;
             """);
 
-        // Accounts have no owner; their country is the only scope column, so an account without a country is for org-wide roles only.
+        // The account's owner is created_by (PermissionService.Columns) and its country is the contracting country, so the
+        // own, team and country scopes of the matrix work on search_document. An account without a country is visible to
+        // org-wide scopes only.
         migrationBuilder.Sql(
             "select search_install_trigger('account', 'account', 'new.name', 'new.country_code', " +
-            "p_account_id => 'new.id', p_country_code => 'new.country_code');");
+            "p_owner_id => 'new.created_by', p_account_id => 'new.id', p_country_code => 'new.country_code');");
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)

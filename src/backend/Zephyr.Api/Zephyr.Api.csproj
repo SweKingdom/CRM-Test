@@ -17,4 +17,9 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The single source of truth for the permission matrix (US-143); read by PermissionSeeder. -->
+    <EmbeddedResource Include="Permissions\permission-matrix.csv" LogicalName="permission-matrix.csv" />
+  </ItemGroup>
+
 </Project>

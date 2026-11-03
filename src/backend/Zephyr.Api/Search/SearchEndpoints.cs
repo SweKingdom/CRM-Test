@@ -4,15 +4,18 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using NpgsqlTypes;
+using Zephyr.Api.Auth;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
+using Zephyr.Api.Permissions;
 
 namespace Zephyr.Api.Search;
 
 /// <summary>
 /// <c>GET /api/v1/search?q=&amp;types=&amp;limit=</c> (US-147): full-text search over <c>search_document</c> first (every query word as a
-/// prefix, accents ignored), then a trigram step when fewer than 5 records were found (typos). The caller's read scope is
-/// applied in SQL before ranking and limit; nothing is filtered afterwards. Everything is bound as parameters.
+/// prefix, accents ignored), then a trigram step when fewer than 5 records were found (typos). The caller's read scope comes from the
+/// permission matrix (<see cref="IPermissionService.Scope"/>, one answer per entity type) and is applied in SQL before ranking and
+/// limit; nothing is filtered afterwards. Everything is bound as parameters.
 /// </summary>
 public static class SearchEndpoints
 {
@@ -27,12 +30,11 @@ public static class SearchEndpoints
 
     public static readonly string[] Types = ["account", "contact", "lead", "opportunity", "project"];
 
-    // TODO(US-144): the read scope must come from PermissionService (entity=search, action=read) and the permission matrix.
-    // Until then this interim rule stands in, like InterimRoleGate: these roles read everything ...
-    private static readonly string[] OrgRoles = ["Admin", "Management", "Finance", "Integration"];
-
-    // ... and these roles read the records they own or that are in their home country. Any other caller is refused.
-    private static readonly string[] OwnRoles = ["Salesperson", "BDR", "PM", "Consultant"];
+    /// <summary>
+    /// Every user role may call the route. What a caller finds depends on their scope per entity type; a caller whose scope is
+    /// <c>none</c> for all of them gets a 403 (Integration is an API client, not a matrix role, so it is refused too).
+    /// </summary>
+    private static readonly string[] AnyRole = PermissionSeeder.Roles.Select(r => r.Key).ToArray();
 
     private static readonly Regex Word = new(@"[\p{L}\p{N}]+", RegexOptions.CultureInvariant);
 
@@ -49,11 +51,19 @@ public static class SearchEndpoints
 
     private const string Columns = "sd.entity_type, sd.entity_id, sd.title, coalesce(sd.subtitle, sd.title)";
 
-    /// <summary>Entity type filter and the interim read scope. Applied in the WHERE clause, before ranking and limit.</summary>
+    /// <summary>
+    /// Entity type filter and the read scope of the permission matrix: per type the caller reads everything (<c>org</c>), the
+    /// records they own (<c>own</c>), the records of their team (<c>team</c>), the records of their home country (<c>country</c>) or
+    /// nothing (the type is in none of the arrays). Applied in the WHERE clause, before ranking and limit. A null home country or
+    /// an empty team matches no row.
+    /// </summary>
     private const string Filter =
         """
         (cardinality(@types) = 0 or sd.entity_type = any(@types))
-          and (@org or sd.owner_id = @uid or sd.country_code = @home)
+          and (sd.entity_type = any(@org)
+               or (sd.entity_type = any(@own) and sd.owner_id = @uid)
+               or (sd.entity_type = any(@team) and sd.owner_id = any(@teamIds))
+               or (sd.entity_type = any(@country) and sd.country_code = @home))
         """;
 
     private const string Weight =
@@ -88,7 +98,8 @@ public static class SearchEndpoints
         limit @limit
         """;
 
-    private sealed record Scope(bool Org, Guid UserId, string? Home);
+    /// <summary>The entity types the caller reads per scope, and the facts the scopes compare with.</summary>
+    private sealed record Scope(string[] Org, string[] Own, string[] Team, string[] Country, Guid UserId, Guid[] TeamIds, string? Home);
 
     private sealed record Hit(string Type, Guid Id, string Title, string Snippet, double Score);
 
@@ -96,13 +107,8 @@ public static class SearchEndpoints
 
     public static IEndpointRouteBuilder MapSearch(this IEndpointRouteBuilder routes)
     {
-        routes.MapGet(Url, async Task<IResult> (HttpContext context, ZephyrDbContext db, ICurrentUser current) =>
+        routes.MapGet(Url, async Task<IResult> (HttpContext context, ZephyrDbContext db, IPermissionService permissions) =>
         {
-            if (current.UserId is not { } userId)
-            {
-                return Results.StatusCode(StatusCodes.Status401Unauthorized);
-            }
-
             var query = context.Request.Query;
             foreach (var (key, values) in query)
             {
@@ -136,7 +142,8 @@ public static class SearchEndpoints
                 throw Bad("types", $"types must be a comma-separated list of: {string.Join(", ", Types)}.");
             }
 
-            var scope = await ReadScopeAsync(db, userId, context.RequestAborted);
+            await permissions.EnsureLoadedAsync(context.RequestAborted);
+            var scope = ReadScope(permissions, await context.CurrentUserAsync());
             var tokens = Word.Matches(text).Select(m => m.Value).ToArray();
             if (tokens.Length == 0)
             {
@@ -145,26 +152,21 @@ public static class SearchEndpoints
 
             var (hits, fallback) = await RunAsync(db, scope, tokens, types, limit, context.RequestAborted);
             return Results.Ok(new { Items = hits, Fallback = fallback });
-        });
+        }).RequireRoles(AnyRole);
 
         return routes;
     }
 
-    /// <summary>The caller's read scope. An unknown or inactive user, or one without a role that may search, gets a 403.</summary>
-    private static async Task<Scope> ReadScopeAsync(ZephyrDbContext db, Guid userId, CancellationToken ct)
+    /// <summary>
+    /// The caller's read scope per entity type, from the permission matrix. A caller who reads none of the types gets a 403;
+    /// a <c>types</c> filter that names only types they cannot read finds nothing, so it does not reveal which types exist.
+    /// </summary>
+    private static Scope ReadScope(IPermissionService permissions, UserAccess user)
     {
-        var user = await db.AppUsers.AsNoTracking()
-            .Where(u => u.Id == userId && u.Active)
-            .Select(u => new { u.Roles, u.HomeCountry })
-            .SingleOrDefaultAsync(ct);
-        var org = user is not null && user.Roles.Intersect(OrgRoles).Any();
-        if (user is null || (!org && !user.Roles.Intersect(OwnRoles).Any()))
-        {
-            throw new ProblemException(StatusCodes.Status403Forbidden, ErrorCodes.Forbidden, "Forbidden",
-                "Your role does not allow searching. Ask an administrator if you need access.");
-        }
+        string[] TypesWith(string mode) => Types.Where(type => permissions.Scope(user, type, "read") == mode).ToArray();
 
-        return new Scope(org, userId, user.HomeCountry?.Trim());
+        var scope = new Scope(TypesWith("org"), TypesWith("own"), TypesWith("team"), TypesWith("country"), user.Id, user.Team.ToArray(), user.HomeCountry?.Trim());
+        return scope.Org.Length + scope.Own.Length + scope.Team.Length + scope.Country.Length == 0 ? throw Problems.Forbidden() : scope;
     }
 
     private static async Task<(List<Hit> Hits, bool Fallback)> RunAsync(
@@ -181,7 +183,11 @@ public static class SearchEndpoints
             command.Parameters.AddWithValue("tokens", tokens);
             command.Parameters.AddWithValue("types", types);
             command.Parameters.AddWithValue("org", scope.Org);
+            command.Parameters.AddWithValue("own", scope.Own);
+            command.Parameters.AddWithValue("team", scope.Team);
+            command.Parameters.AddWithValue("country", scope.Country);
             command.Parameters.AddWithValue("uid", scope.UserId);
+            command.Parameters.AddWithValue("teamIds", scope.TeamIds);
             command.Parameters.Add(new NpgsqlParameter("home", NpgsqlDbType.Text) { Value = (object?)scope.Home ?? DBNull.Value });
             command.Parameters.AddWithValue("limit", rows);
             if (found is not null)

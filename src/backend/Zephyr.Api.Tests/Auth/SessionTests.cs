@@ -16,6 +16,7 @@ using Microsoft.Extensions.Time.Testing;
 using Zephyr.Api.Auth;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
+using Zephyr.Api.Permissions;
 using Zephyr.Api.Tests.Support;
 
 namespace Zephyr.Api.Tests.Auth;
@@ -56,7 +57,7 @@ public class SessionTests(DbFixture fixture) : IAsyncLifetime
             (id, _) =>
             {
                 reads?.Add(id);
-                return Task.FromResult(active());
+                return Task.FromResult(active() ? new UserAccess(id, [], null, [id]) : null);
             });
 
     private async Task<WebApplication> StartAsync(IUserStatus? status = null, params (string Key, string Value)[] settings)
@@ -67,6 +68,10 @@ public class SessionTests(DbFixture fixture) : IAsyncLifetime
         builder.Services.AddApiConventions();
         builder.AddZephyrAuth();
         builder.Services.AddSingleton<TimeProvider>(clock);
+        // The permission matrix of the product, held in memory: the user routes ask the engine, not the database, for the matrix.
+        var permissions = new PermissionService();
+        permissions.Load(PermissionSeeder.Parse(PermissionSeeder.EmbeddedCsv()));
+        builder.Services.AddSingleton<IPermissionService>(permissions);
         if (status is not null)
         {
             builder.Services.AddScoped(_ => status);
