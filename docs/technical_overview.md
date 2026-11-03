@@ -236,3 +236,17 @@ Check constraints: currency <> 'SEK'; month is the first day of a month; rate_to
 **Seed.** `Seed/0003_exchange_rates.sql` loads EUR 11, USD 10, NOK 0.95, AED 2.72 and GBP 12.80 for every month from 2020-01 to 2030-12 (`ON CONFLICT DO NOTHING`). 660 rows in total. Re-running the seed keeps edited rates.
 
 **Deployment.** The API applies migration `0003_AddExchangeRate` at start. Then run `node scripts/seed.mjs`.
+
+## Upsert by external ID and soft delete (US-135)
+
+Integrations write idempotently through `PUT /api/v1/{plural}/by-external-id/{system}/{value}`. Only `accounts` is registered so far.
+
+- **Upsert key:** `(system, entity_type, value)` in table `external_id`. `system` is `dynamics` or `fortnox`; `value` is at most 200 characters.
+- **Flow:** role check (403) → body read (400) → `WriteHooks` (422) → field validation via `EntityBinding` (422). Nothing is written before validation passes.
+- **Write:** one transaction. `INSERT … ON CONFLICT (system, entity_type, value) DO NOTHING` with a pre-generated `entity_id`. 1 row inserted → entity inserted, 201 with `Location` and `ETag`. 0 rows → `SELECT … FOR UPDATE` on the mapping; soft-deleted → 409 `RECORD_DELETED` (rolled back); otherwise fields applied, 200. `If-Match` is ignored.
+- **Soft delete:** `DELETE /api/v1/{plural}/{id}` → `Remove` plus `AuditInterceptor` sets `deleted_at`; 204. 404 when missing or already deleted. The global soft-delete filter hides deleted rows from reads and lists.
+- **Authorisation (interim):** `InterimRoleGate` reads the roles of the caller's active `app_user`. Upsert: Admin or Integration. DELETE: Admin only. Marked `TODO(US-143/144)`; replace with `RequirePermission(entity, create|update|delete)` at scope `org`.
+- **Code:** `Common/ExternalUpsert.cs`, `Permissions/EntityRegistry.cs`, `Permissions/InterimRoleGate.cs`, `Data/ZephyrDbContext.cs` (`Account` entity on table `account`), `Common/Problems.cs` (`FORBIDDEN`), `Program.cs` (route mapping).
+- **Schema:** no migration. Tables `account` (0002) and `external_id` (0001) already exist.
+- **Adding an entity:** one `EntityBinding<T>` in `EntityRegistry` plus two map calls in `Program.cs`.
+- **Account body:** `name` required; `countryCode` optional, two capital letters; PUT replaces the record, so an absent `countryCode` clears it.
