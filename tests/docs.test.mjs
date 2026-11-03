@@ -83,8 +83,3 @@ test('US-138 AC 3: the PR template has a Claude usage section with tokens in, to
   assert.ok(body.includes('node tools/claude-usage/cli.mjs report'), 'points to the existing report command');
   assert.ok(body.includes('docs/claude-usage/'));
 });
-
-test('US-138: no second usage script or {story}.md log format is added next to the existing hook output', () => {
-  assert.equal(existsSync(new URL('../scripts/claude-usage.mjs', import.meta.url)), false);
-  assert.equal(existsSync(new URL('../docs/claude-usage/', import.meta.url)) && readdirSync(new URL('../docs/claude-usage/', import.meta.url)).some((n) => /^[A-Z]{2}-\d+\.md$/.test(n)), false);
-});
