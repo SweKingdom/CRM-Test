@@ -72,14 +72,15 @@ test('REQUIRE_ALL=1 fails a skipped step whose tool is missing, but not a "needs
   assert.deepEqual(strict.rows.filter((r) => r[0] === 'SKIP').map((r) => r[1]), ['spectral', 'schemathesis']);
 });
 
-test('PO answer #124: both scripts use the one API description path docs/api/openapi.json and the metadata generator', () => {
-  assert.match(read('scripts/check'), /^OPENAPI_FILE=docs\/api\/openapi\.json$/m);
-  assert.match(read('scripts/check.ps1'), /^\$OpenApiFile = 'docs\/api\/openapi\.json'$/m);
+test('US-136: both scripts use the one API description path docs/api/openapi.yaml and the metadata generator', () => {
+  assert.match(read('scripts/check'), /^OPENAPI_FILE=docs\/api\/openapi\.yaml$/m);
+  assert.match(read('scripts/check.ps1'), /^\$OpenApiFile = 'docs\/api\/openapi\.yaml'$/m);
   for (const script of ['scripts/check', 'scripts/check.ps1']) {
     assert.match(read(script), /tools\/openapi-from-metadata\/generate\.mjs/);
-    assert.doesNotMatch(read(script), /(^|[^/])openapi\/openapi\.json/, script);
+    assert.doesNotMatch(read(script), /openapi\.json/, script);
+    assert.doesNotMatch(read(script), /(^|[^/])openapi\/openapi\./, script);
   }
-  assert.doesNotMatch(read('README.md'), /(^|[^/])openapi\/openapi\.json/);
+  assert.doesNotMatch(read('README.md'), /openapi\.json|(^|[^/])openapi\/openapi\./);
 });
 
 test('AC 3: the workflow runs scripts/check on pull requests with read-only access and a Postgres service, and releases nothing', () => {
@@ -94,6 +95,13 @@ test('AC 3: the workflow runs scripts/check on pull requests with read-only acce
   assert.match(workflow, /REQUIRE_ALL: "1"/);
   assert.doesNotMatch(workflow, /deploy|login|push|secrets\.|docker compose/i);
   for (const [, action] of workflow.matchAll(/uses: (\S+)/g)) assert.match(action, /@v\d+$/, action);
+});
+
+test('US-136: the workflow installs a pinned oasdiff release before the gate runs', () => {
+  const workflow = read('.github/workflows/check.yml');
+  assert.match(workflow, /OASDIFF_VERSION: "\d+\.\d+\.\d+"/);
+  assert.match(workflow, /releases\/download\/v\$\{OASDIFF_VERSION\}\/oasdiff_\$\{OASDIFF_VERSION\}_linux_amd64\.tar\.gz/);
+  assert.ok(workflow.indexOf('Install oasdiff') < workflow.indexOf('run: bash scripts/check'));
 });
 
 test('AC 3: the Postgres service uses the values of .env.example, and the .NET version is the project one', () => {

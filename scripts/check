@@ -8,7 +8,7 @@
 set -u
 
 SPECTRAL_VERSION=6.15.0
-OPENAPI_FILE=docs/api/openapi.json
+OPENAPI_FILE=docs/api/openapi.yaml
 OPENAPI_GENERATOR=tools/openapi-from-metadata/generate.mjs
 API_URL=http://127.0.0.1:18080
 STEPS=(lint tests seeds openapi-regenerate spectral oasdiff schemathesis vulnerabilities)
@@ -73,15 +73,18 @@ step_seeds() {
   "$python" scripts/validate_seeds.py
 }
 
-# 4. OpenAPI regenerate: the generator writes docs/api/openapi.json; any difference from the committed file fails.
+# 4. OpenAPI regenerate: the generator writes a temporary file; any difference from the committed docs/api/openapi.yaml fails.
 step_openapi_regenerate() {
   [ -f "$OPENAPI_GENERATOR" ] || { skip na "not yet applicable: no generator at $OPENAPI_GENERATOR"; return; }
-  node "$OPENAPI_GENERATOR" "$OPENAPI_FILE" || return 1
-  if [ -n "$(git status --porcelain -- "$OPENAPI_FILE")" ]; then
-    echo "$OPENAPI_FILE differs from the committed copy. Commit the regenerated file."
-    git --no-pager diff --stat -- "$OPENAPI_FILE"
-    return 1
+  local generated rc=0
+  generated=$(mktemp)
+  node "$OPENAPI_GENERATOR" --out "$generated" || { rm -f "$generated"; return 1; }
+  if ! diff -u --strip-trailing-cr "$OPENAPI_FILE" "$generated"; then
+    echo "$OPENAPI_FILE is not what the generator produces: run generate (node $OPENAPI_GENERATOR) and commit the result. Never edit the file by hand."
+    rc=1
   fi
+  rm -f "$generated"
+  return $rc
 }
 
 # 5. Spectral (pinned version; rules in .spectral.yaml)
@@ -110,7 +113,7 @@ step_oasdiff() {
 # 7. Schemathesis against the local API (needs the database only). A schema with security schemes needs a token or Keycloak.
 step_schemathesis() {
   [ -f "$OPENAPI_FILE" ] || { skip na "not yet applicable: no $OPENAPI_FILE"; return; }
-  if grep -q '"securitySchemes"' "$OPENAPI_FILE" && [ -z "${ZEPHYR_CHECK_TOKEN:-}" ]; then
+  if grep -q '^  securitySchemes:' "$OPENAPI_FILE" && [ -z "${ZEPHYR_CHECK_TOKEN:-}" ]; then
     skip keycloak "needs Keycloak"; return
   fi
   command -v schemathesis > /dev/null || { skip tool "schemathesis is not installed"; return; }

@@ -144,6 +144,17 @@ npm run seed -- --volume --seed 7 --anchor 2026-12-11
 - The same `--seed` (default 42) and `--anchor` (default: today in Europe/Stockholm) always give the same ids and names.
 - Targets are in `tools/search-benchmark/generate/targets.json`; one SQL file per entity next to it; name lists in `tools/search-benchmark/data/`.
 
+## API description (OpenAPI)
+
+`docs/api/openapi.yaml` is the OpenAPI 3.1 description of the API (base `/api/v1`). It is generated and never edited by hand. The source is the field metadata in `tools/openapi-from-metadata/field-metadata.json`: each field gives its type, nullability, enum, max length and whether a client may send it, and becomes a schema property, a `required` entry and a validation constraint.
+
+```sh
+node tools/openapi-from-metadata/generate.mjs                  # rewrite docs/api/openapi.yaml
+node tools/openapi-from-metadata/generate.mjs --out api.yaml   # write somewhere else (add a metadata path first to use another metadata file)
+```
+
+Change the metadata, run the generator and commit both. The quality gate then checks that the committed file is exactly what the generator writes (step `openapi-regenerate`, failure message "run generate"), lints it with Spectral (`.spectral.yaml`) and compares it with the copy on `main` with `oasdiff breaking`. A removed field, a narrowed type or a new required property fails the gate; a deliberate break needs the PR label and a changelog note (a review policy, not a script). The test `OpenApiContractTests` fails when the API registers a route the file does not document, or the file documents a route the API lacks.
+
 ## Quality gate
 
 Run the quality gate before you open a PR. GitHub Actions runs the same script on every pull request and deploys nothing.
@@ -160,14 +171,14 @@ It runs eight steps in a fixed order, always all of them, prints `PASS`, `FAIL` 
 | 1 | `lint` | `npm run typecheck` (`dotnet build -warnaserror`) and `npm run lint` (`dotnet format --verify-no-changes`); the frontend `lint` and `typecheck` scripts when it has them |
 | 2 | `tests` | `npm test`: `dotnet test` with the integration tests on PostgreSQL, then the Node tests |
 | 3 | `seeds` | `python3 scripts/validate_seeds.py` |
-| 4 | `openapi-regenerate` | `node tools/openapi-from-metadata/generate.mjs docs/api/openapi.json`; fails if the committed file differs |
-| 5 | `spectral` | Spectral 6.15.0 (`.spectral.yaml`) on `docs/api/openapi.json` |
-| 6 | `oasdiff` | `oasdiff breaking` against the copy on `main` (needs `oasdiff` installed) |
+| 4 | `openapi-regenerate` | `node tools/openapi-from-metadata/generate.mjs --out <temporary file>`; fails with "run generate" if it differs from the committed `docs/api/openapi.yaml` |
+| 5 | `spectral` | Spectral 6.15.0 (`.spectral.yaml`) on `docs/api/openapi.yaml` |
+| 6 | `oasdiff` | `oasdiff breaking` against `origin/main:docs/api/openapi.yaml` (needs `oasdiff` installed; skipped when `main` has no such file yet) |
 | 7 | `schemathesis` | Schemathesis 4 against the API started on 127.0.0.1:18080 with the database `zephyr_check` (needs `schemathesis` installed) |
 | 8 | `vulnerabilities` | `dotnet list package --vulnerable --include-transitive` and `npm audit --audit-level=high` |
 
 - **Database:** locally the script starts the Compose `db` service, waits until it is healthy and leaves it running. To use another server, set `ZEPHYR_TEST_DB` to its connection string. In CI (`CI=true`) the workflow's PostgreSQL 16 service container is used and Compose is not called. Each run creates and drops its own database.
-- **SKIP:** a step whose target does not exist yet prints `SKIP (not yet applicable: ...)` and is listed in the summary; steps 4 to 7 skip until the OpenAPI generator exists. `SKIP (needs Keycloak)` means the API schema needs sign-in and `ZEPHYR_CHECK_TOKEN` (a bearer token) is not set; Keycloak is not started in CI, so run `docker compose up -d keycloak` locally for those checks. With `REQUIRE_ALL=1` (set in CI) a step that is skipped because its tool is missing, although its target exists, fails.
+- **SKIP:** a step whose target does not exist yet prints `SKIP (not yet applicable: ...)` and is listed in the summary. `SKIP (needs Keycloak)` means the API schema needs sign-in and `ZEPHYR_CHECK_TOKEN` (a bearer token) is not set; Keycloak is not started in CI, so run `docker compose up -d keycloak` locally for those checks. With `REQUIRE_ALL=1` (set in CI) a step that is skipped because its tool is missing, although its target exists, fails. Locally `oasdiff` is optional and its step shows `SKIP (oasdiff is not installed)`; CI installs a pinned release and requires it.
 - The individual commands still work alone: `npm run typecheck && npm run lint && npm test && npm run build`.
 
 ## Build log and decisions

@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Continue'
 Set-StrictMode -Version Latest
 
 $SpectralVersion = '6.15.0'
-$OpenApiFile = 'docs/api/openapi.json'
+$OpenApiFile = 'docs/api/openapi.yaml'
 $OpenApiGenerator = 'tools/openapi-from-metadata/generate.mjs'
 $ApiUrl = 'http://127.0.0.1:18080'
 $Steps = @('lint', 'tests', 'seeds', 'openapi-regenerate', 'spectral', 'oasdiff', 'schemathesis', 'vulnerabilities')
@@ -82,16 +82,23 @@ function Step-seeds {
     return (Invoke-Native $python.Source @('scripts/validate_seeds.py'))
 }
 
-# 4. OpenAPI regenerate
+# 4. OpenAPI regenerate: the generator writes a temporary file; any difference from the committed file fails (line ends ignored).
 function Step-openapi-regenerate {
     if (-not (Test-Path $OpenApiGenerator)) { return (Skip 'na' "not yet applicable: no generator at $OpenApiGenerator") }
-    if (-not (Invoke-Native node @($OpenApiGenerator, $OpenApiFile))) { return $false }
-    if (git status --porcelain -- $OpenApiFile) {
-        Write-Host "$OpenApiFile differs from the committed copy. Commit the regenerated file."
-        git --no-pager diff --stat -- $OpenApiFile | Out-Host
-        return $false
+    $generated = New-TemporaryFile
+    try {
+        if (-not (Invoke-Native node @($OpenApiGenerator, '--out', $generated.FullName))) { return $false }
+        $committedText = ''
+        if (Test-Path $OpenApiFile) { $committedText = ((Get-Content $OpenApiFile -Raw) -replace "`r`n", "`n") }
+        $generatedText = ((Get-Content $generated.FullName -Raw) -replace "`r`n", "`n")
+        if ($committedText -cne $generatedText) {
+            Write-Host "$OpenApiFile is not what the generator produces: run generate (node $OpenApiGenerator) and commit the result. Never edit the file by hand."
+            return $false
+        }
+        return $true
+    } finally {
+        Remove-Item $generated -ErrorAction SilentlyContinue
     }
-    return $true
 }
 
 # 5. Spectral
@@ -121,7 +128,7 @@ function Step-oasdiff {
 # 7. Schemathesis
 function Step-schemathesis {
     if (-not (Test-Path $OpenApiFile)) { return (Skip 'na' "not yet applicable: no $OpenApiFile") }
-    if ((Select-String -Path $OpenApiFile -Pattern '"securitySchemes"' -Quiet) -and -not $env:ZEPHYR_CHECK_TOKEN) {
+    if ((Select-String -Path $OpenApiFile -Pattern '^  securitySchemes:' -Quiet) -and -not $env:ZEPHYR_CHECK_TOKEN) {
         return (Skip 'keycloak' 'needs Keycloak')
     }
     if (-not (Get-Command schemathesis -ErrorAction SilentlyContinue)) { return (Skip 'tool' 'schemathesis is not installed') }
