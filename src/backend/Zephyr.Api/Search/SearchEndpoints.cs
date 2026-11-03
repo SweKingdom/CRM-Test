@@ -41,11 +41,11 @@ public static class SearchEndpoints
     /// <summary>The query words as a prefix tsquery (<c>tsq</c>) and as one normalised phrase (<c>phrase</c>).</summary>
     private const string Query =
         """
-        with tok as (
-            select f_search_norm(t) as t from unnest(@tokens) as x(t)
+        with parts as (
+            select f_search_norm(t) as t from unnest(@words) as x(t)
         ), q as (
             select to_tsquery('simple', string_agg(quote_literal(t) || ':*', ' & ')) as tsq, string_agg(t, ' ') as phrase
-            from tok where t <> ''
+            from parts where t <> ''
         )
         """;
 
@@ -144,13 +144,13 @@ public static class SearchEndpoints
 
             await permissions.EnsureLoadedAsync(context.RequestAborted);
             var scope = ReadScope(permissions, await context.CurrentUserAsync());
-            var tokens = SplitIntoTokens(text);
-            if (tokens.Length == 0)
+            var words = SplitIntoWords(text);
+            if (words.Length == 0)
             {
                 return Results.Ok(new { Items = Array.Empty<Hit>(), Fallback = false });
             }
 
-            var (hits, fallback) = await RunAsync(db, scope, tokens, types, limit, context.RequestAborted);
+            var (hits, fallback) = await RunAsync(db, scope, words, types, limit, context.RequestAborted);
             return Results.Ok(new { Items = hits, Fallback = fallback });
         }).RequireRoles(AnyRole);
 
@@ -158,7 +158,7 @@ public static class SearchEndpoints
     }
 
     /// <summary>The runs of letters and digits in the query; punctuation only separates them.</summary>
-    private static string[] SplitIntoTokens(string text) =>
+    private static string[] SplitIntoWords(string text) =>
         LetterOrDigitRuns.Matches(text).Select(found => found.Value).ToArray();
 
     /// <summary>
@@ -174,7 +174,7 @@ public static class SearchEndpoints
     }
 
     private static async Task<(List<Hit> Hits, bool Fallback)> RunAsync(
-        ZephyrDbContext db, Scope scope, string[] tokens, string[] types, int limit, CancellationToken ct)
+        ZephyrDbContext db, Scope scope, string[] words, string[] types, int limit, CancellationToken ct)
     {
         // One transaction: both steps see the same data, and set_config(..., true) is local to it (SET LOCAL).
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -184,7 +184,7 @@ public static class SearchEndpoints
         async Task<List<Hit>> Read(string sql, int rows, string[]? found = null)
         {
             await using var command = new NpgsqlCommand(sql, connection, inner);
-            command.Parameters.AddWithValue("tokens", tokens);
+            command.Parameters.AddWithValue("words", words);
             command.Parameters.AddWithValue("types", types);
             command.Parameters.AddWithValue("org", scope.Org);
             command.Parameters.AddWithValue("own", scope.Own);
