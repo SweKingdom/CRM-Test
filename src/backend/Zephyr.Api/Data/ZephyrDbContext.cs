@@ -53,6 +53,34 @@ public class ExchangeRate : IEntity
     public decimal RateToSek { get; set; }
 }
 
+/// <summary>
+/// A person who can sign in (US-140). Users are pre-provisioned: <see cref="Issuer"/> and <see cref="Subject"/> stay null
+/// until the first sign-in links the identity provider's user. No password or secret of any kind is stored.
+/// </summary>
+public class AppUser : IEntity
+{
+    public const string AdminRole = "Admin";
+
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public Guid? UpdatedBy { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string Custom { get; set; } = "{}";
+    public string Name { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string? Issuer { get; set; }
+    public string? Subject { get; set; }
+    public string? HomeCountry { get; set; }
+
+    /// <summary>Salesperson, BDR, PM, Consultant, Finance, Management, Admin.</summary>
+    public string[] Roles { get; set; } = [];
+
+    public bool Active { get; set; } = true;
+    public DateTime? LastLoginAt { get; set; }
+}
+
 /// <summary>Append-only record of who did what (enforced by a database trigger).</summary>
 public class AuditLog
 {
@@ -69,6 +97,7 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
 {
     public DbSet<ExternalId> ExternalIds => Set<ExternalId>();
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
+    public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     public static string ConnectionStringFromEnvironment() =>
@@ -120,6 +149,17 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
             e.Property(x => x.Month).HasColumnType("date");
             e.Property(x => x.RateToSek).HasColumnType("numeric(18,6)");
             e.HasIndex(x => new { x.Currency, x.Month }).IsUnique().HasDatabaseName("ux_exchange_rate_currency_month");
+        });
+
+        // The unique index on lower(email) (an expression index) is created by the migration only.
+        // active and roles have no model default: EF must always send them, a default would swallow active = false.
+        modelBuilder.Entity<AppUser>(e =>
+        {
+            e.ToTable("app_user");
+            e.Property(x => x.HomeCountry).HasColumnType("character(2)");
+            e.Property(x => x.Roles).HasColumnType("text[]");
+            e.HasIndex(x => new { x.Issuer, x.Subject }).IsUnique().HasFilter("issuer is not null and subject is not null")
+                .HasDatabaseName("ux_app_user_issuer_subject");
         });
 
         modelBuilder.Entity<AuditLog>(e =>

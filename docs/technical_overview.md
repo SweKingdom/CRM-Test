@@ -74,32 +74,20 @@ Keycloak stands in for Entra locally. It runs in dev mode on localhost only.
 
 ## Reference data and seeds (US-130)
 
-**Migration `0002_ReferenceData`** (raw SQL, no model snapshot change) creates the reference tables. Every reference table has `key text unique`, `label text`, `sort_order int`, `active bool default true`.
+Reference data and seeds (US-130)
 
-| Table | Extra columns |
-|---|---|
-| stage | `is_terminal`, `exit_criteria jsonb null` |
-| close_outcome | `maps_to_stage` (Won, Lost, NoDecision, Disqualified) |
-| close_reason | `outcome_key` FK to close_outcome.key |
-| call_outcome | `counts_as_contact` |
-| time_type | `billable_default`, `requires_project`, `allows_future`, `category` (client, internal, absence) |
-| country | `iso2 char(2) unique` (key = iso2) |
-| currency | `iso3 char(3) unique`, `decimals int default 2` |
-| meddpicc_element | none |
-| account (minimal) | `name`, `country_code char(2) null`; unique index on `lower(name)` |
+Volume seed (US-131)
 
-**Seed files** (applied in filename order by `scripts/seed.mjs`, one transaction per file):
-- `Seed/0001_reference_data.sql`: reference rows, `ON CONFLICT (key) DO UPDATE`. Changes reach existing databases without a reset.
-- `Seed/0002_demo_accounts.sql`: three demo accounts with fixed UUIDs, `ON CONFLICT (id) DO NOTHING`.
-- No seed-tracking table is used.
-
-**Command:** `npm run seed` (`node scripts/seed.mjs`). Connection from `DATABASE_URL` or `.env`. Dependencies: `pg`, `dotenv`.
-
-**Validation:** `python3 scripts/validate_seeds.py [dir]` (stdlib only). Checks: sequential `NNNN_*.sql` names, no DELETE/DROP/TRUNCATE, ON CONFLICT on every INSERT, DO UPDATE for reference files and DO NOTHING for demo files, row counts per set (9/11/6/6/7/8), no email or phone outside `example.com`. Exit 1 prints `file:line reason`.
-
-**Tests:** `SeedTests.cs` (AC 1–4) needs `ZEPHYR_TEST_DB`; CI sets `ZEPHYR_REQUIRE_DB=1`. `tests/seeds.test.mjs` covers AC 5 using `tests/seeds_broken/`.
-
-**Not in this story:** exchange rates (US-134), volume seed set (US-131).
+- Entry point: `npm run seed -- --volume [--seed N] [--anchor YYYY-MM-DD] [--reset]` (`scripts/seed.mjs`).
+- SQL generators: `tools/search-benchmark/generate/01_account.sql` to `06_time_entry.sql`, with shared pg_temp helpers in `_helpers.sql`. Parameters arrive as transaction settings: `zephyr.seed`, `zephyr.anchor`, `zephyr.data`, `zephyr.targets`.
+- Targets: `generate/targets.json` (56,000 searchable records; 105,000 time entries; 18,495 in the trailing 12 months).
+- Input lists: `tools/search-benchmark/data/` (`names.json`, `cities.json`, `typos.json`, `time_types.json`).
+- Determinism: each value is `md5(seed || entity || n)`. No `setseed`/`random()`.
+- Loader behaviour: one transaction per entity; missing tables are skipped with a warning; ANALYZE after load; a second run without `--reset` is refused; `--reset` deletes only rows where `custom->>'synthetic' = 'true'`.
+- Marker: every generated row has `custom->>'synthetic' = 'true'`. Typo rows store the original spelling in `custom->>'typo_of'`.
+- Time entries: first 18,495 spread over [anchor − 12 months, anchor]; the remainder over the 1,460 days before that window. Columns filled: `project_id`, `work_date`, `duration_minutes`, `notes`, `user_id`, `time_type`.
+- Assumed schema (owned by later stories or US-150): `time_entry.time_type` holds `time_type.key`; `time_entry.user_id` is a plain uuid with no foreign key.
+- Tests: `tests/volume.test.mjs` (targets, file layout, columns, keys, option validation); `VolumeSeedTests.cs` (DB-backed AC 1 to AC 3; checksum per table, extended as tables are created). DB tests need `ZEPHYR_TEST_DB` and run in CI with `ZEPHYR_REQUIRE_DB=1`.
 
 ## API conventions (US-133)
 
@@ -120,3 +108,102 @@ All endpoints live under `/api/v1`, use plural camelCase nouns, and are wired wi
 **Business dates.** `BusinessClock` works in Europe/Stockholm. A period is `yyyy-MM`; `LockInstant(period)` is 00:00 Stockholm on the 3rd of the next month. Linux images need tzdata or ICU.
 
 **Data.** No schema change for US-133; the migration snapshot is unchanged.
+
+## Authentication and sign-in (US-140)
+
+**Flow:** OpenID Connect authorisation code with PKCE, via the standard ASP.NET Core OIDC handler. One OIDC scheme per provider, callback `/signin-oidc-{name}`. Session is a cookie (HttpOnly, SameSite=Lax, Secure when not localhost). `SaveTokens=false`, `MapInboundClaims=false`. Scopes: openid, profile, email.
+
+**Endpoints**
+
+| Route | Access | Notes |
+|---|---|---|
+| GET /auth/login?provider=&returnUrl= | Anonymous | Challenge. `returnUrl` must be a local relative path, otherwise 400. |
+| POST /auth/logout | Session | Clears cookie, 204. |
+| GET /auth/me | Session | 200 `{id,name,email,roles,homeCountry}`; 401 anonymous. |
+| GET /auth/denied | Anonymous | 403 problem+json (RFC 9457). |
+| GET /health | Anonymous | Health check. |
+
+All other `/api/v1/*` routes require an authenticated user (default-deny fallback policy).
+
+**User matching (OnTokenValidated)**
+1. Match on (issuer, subject), not deleted. Found: refuse if `active=false`, else sign in.
+2. Not found, no active admin exists, and (issuer, subject) equal the bootstrap values: create an active Admin, log Warning and write `audit_log` `bootstrap_admin_used`.
+3. Not found, provider `EmailTrusted=true`, claim `email_verified=true`, and an active user with that email and null issuer/subject exists: link and sign in. An email already linked to another subject is refused.
+4. Otherwise refuse (`context.Fail`, redirect to `/auth/denied`) and log the reason. Tokens are never logged.
+
+Session claims: `sub` = `app_user.id`, roles, issuer. `last_login_at` is updated on sign-in.
+
+**CSRF:** cookie-authenticated POST, PUT, PATCH and DELETE to `/api/v1/*` require header `X-Zephyr-Csrf: 1` and a same-origin `Origin`. Otherwise 403 `CSRF_REJECTED`. Bearer-token calls are exempt. GET is unaffected.
+
+**CORS:** none. The SPA is same-origin. The Vite dev server proxies `/api`, `/auth` and `/signin-oidc-*`.
+
+**Data model: `app_user`** (plus baseline columns)
+
+| Column | Type | Notes |
+|---|---|---|
+| name | text not null | |
+| email | text not null | Unique index on lower(email) where deleted_at is null. |
+| issuer | text null | Null until linked. |
+| subject | text null | Unique (issuer, subject) where both not null. |
+| home_country | char(2) null | FK countries. |
+| roles | text[] not null, default '{}' | Values: Salesperson, BDR, PM, Consultant, Finance, Management, Admin. |
+| active | bool not null, default true | |
+| last_login_at | timestamptz null | UTC. |
+
+No password or secret column exists. Users are pre-provisioned; there is no self sign-up.
+
+**Configuration**
+
+| Variable | Notes |
+|---|---|
+| ZEPHYR_AUTH__PROVIDERS__n__NAME / AUTHORITY / CLIENTID / CLIENTSECRET / EMAILTRUSTED | Per provider. Index 0 = `zephyr`, index 1 = `zephyr-b`. Providers only from configuration. |
+| ZEPHYR_BOOTSTRAP_ADMIN_ISSUER / ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT | Optional. Used only while no active admin exists. |
+
+Secrets live only in the gitignored `.env`. Provider 1 `CLIENTSECRET` must equal `OIDC_CLIENT_SECRET`.
+
+## Quality gate (US-132)
+
+The quality gate is one script, `scripts/check` (Bash) with `scripts/check.ps1` (Windows) as its equivalent. Developers run it locally; GitHub Actions runs `bash scripts/check` on every pull request. Nothing is deployed.
+
+| # | Step | Command | Missing target |
+|---|---|---|---|
+| 1 | lint | `dotnet build -warnaserror`, `dotnet format --verify-no-changes`, frontend `npm run lint && npm run typecheck` | — |
+| 2 | tests | `dotnet test` against the test database | — |
+| 3 | seeds | `python3 scripts/validate_seeds.py` | — |
+| 4 | openapi-regenerate | `node tools/openapi-from-metadata/generate.mjs docs/api/openapi.json`; fails if git diff | SKIP (not yet applicable) |
+| 5 | spectral | `npx --yes @stoplight/spectral-cli@6.15.0` on `docs/api/openapi.json` (`.spectral.yaml` extends `spectral:oas`) | SKIP (not yet applicable) |
+| 6 | oasdiff | `oasdiff breaking` against the copy on `origin/main` (or `main`) | SKIP (not yet applicable) |
+| 7 | schemathesis | Schemathesis 4 against the local API | SKIP (not yet applicable) |
+| 8 | vulnerabilities | `dotnet list package --vulnerable --include-transitive`; `npm audit --audit-level=high` | — |
+
+**Behaviour**
+- Each step prints `PASS`, `FAIL` or `SKIP` and a `=== Summary` table. All steps run even after a failure. Exit code 1 if any step fails.
+- A missing target is a SKIP, never a silent PASS. With `REQUIRE_ALL=1` (set in CI), a SKIP for a built feature fails the run.
+- Steps needing Keycloak print `SKIP (needs Keycloak)` in CI. Run them locally with `docker compose up -d keycloak`.
+- Locally the script starts the Compose `db` service and waits for it to be healthy, and leaves services running. In CI (`CI=true`) it does not call Compose for `db`.
+
+**Database for tests**
+- Tests read `ZEPHYR_TEST_DB` only, in Npgsql key=value form. `DATABASE_URL` is not read.
+- Each run uses its own database with Respawn for isolation.
+
+**CI workflow** (`.github/workflows/check.yml`)
+- Trigger: `on: pull_request` only. No `pull_request_target`.
+- Permissions: `contents: read`. No secrets, no login, no push.
+- Runner: ubuntu-latest, with .NET, Node and Python set up.
+- Service: Postgres 16 as a `services:` container, health-checked on port 5432. Credentials come from the `.env.example` values.
+- Before the check, the workflow copies `.env.example` to `.env`.
+
+**Pinned tools**
+- Spectral: `@stoplight/spectral-cli@6.15.0`, held in one constant in the scripts. A test checks the pin. Not yet an exact devDependency (see PO answer #123).
+- Later steps (oasdiff, Schemathesis 4) must be installed in the workflow when their steps become active (US-136).
+
+**Tests:** `tests/check.test.mjs` runs with `npm test`. The bash-driven tests are skipped on native Windows.
+
+## Documentation and decision records (US-137)
+
+- `README.md` section "Run Zephyr locally": ordered commands from clone to signed-in seeded system, with URLs, seeded test user name and stop/reset. No secrets; `.env.example` holds placeholders only.
+- `BUILD.md`: build log, one `## F{nn} — {title} (FT-code)` section per merged feature. Each section has the six parts of `build/prompts/feature-section.md` and a `Reviewed by:` line (second developer).
+- `build/prompts/feature-section.md`: single source for the six part names.
+- `docs/adr/`: ADR-013 (local edition) is Proposed. It defers ADR-001 and ADR-002 without replacing them. `docs/adr/README.md` is the approval index for ADR-004, 006, 007, 008, 009, 012 and 013. Status changes to Accepted only in the approving PR, with approver and approval PR recorded.
+- `.github/pull_request_template.md`: checklist line for the BUILD.md section and second-developer review.
+- `tests/docs.test.mjs`: checks the README order, BUILD.md headings and ADR index.

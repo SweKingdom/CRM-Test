@@ -2,36 +2,35 @@
 
 ## Signing in locally
 
-Use this chapter to sign in to the local test environment.
+Zephyr does not have its own passwords. You sign in through the organisation's identity provider.
 
-1. Start the stack: run `scripts/render-realms.sh` (or `scripts/render-realms.ps1`), then `docker compose up`.
-2. Open http://localhost:8180 and choose the realm `zephyr`.
-3. Sign in with one of the test users: admin, salesperson, BDR, project manager, consultant, finance or management, all at `@example.com`.
-4. Use the password you set for that user in your `.env` file. Passwords are never stored in the repository.
+1. Open Zephyr in your browser and select **Sign in**. (Local: `/auth/login?provider=zephyr`.)
+2. Enter your work account in the identity provider's sign-in page.
+3. You are returned to Zephyr and see your name in the header.
 
-Tip: the test users are for local testing only. Do not use them outside your own machine.
+**Tips**
+- If you have no Zephyr account yet, the sign-in is refused. Ask an administrator to create your user.
+- If you see the message "Your account is not set up in Zephyr. Contact an administrator.", your account exists in the identity provider but is not linked to a Zephyr user, or it is deactivated.
+- Signing out clears your session in this browser.
 
 ## Running Zephyr locally
 
-Developers and testers can start the whole system on one laptop with Docker.
+The step-by-step local setup now lives in the project README, section "Run Zephyr locally". It lists every command in order, from cloning the repository to signing in as a seeded test user. Test user passwords are set in your local `.env` file and are never written in the README.
 
-1. Install Docker Desktop (or Rancher Desktop or Podman).
-2. In the project folder, run `node scripts/setup-env.mjs`. This creates `.env` with random passwords. It never overwrites an existing `.env`.
-3. Run `docker compose up --build`.
-4. Open http://localhost:8025 to see emails caught by Mailpit. Nothing is sent outside your machine.
-5. Check the API is up at http://localhost:8080/health. A healthy system returns `{"status":"Healthy"}`.
-
-Tip: `.env` holds your local passwords. Do not commit it.
+Tip: if you only need to sign in again, skip to the sign-in step. Your data stays on your computer.
 
 ## Loading reference data and demo companies
 
-Reference data (call outcomes, time types, countries, currencies, sales stages, MEDDPICC elements) and three fake demo companies are loaded with one command.
+Loading reference data and demo companies
 
-1. Make sure the database is running and `DATABASE_URL` is set (environment or `.env` file).
-2. Run `npm run seed` from the project root.
-3. Check the result. The three demo companies **Lindholm Demo AB**, **Ekdal Demo AB** and **Bellini Demo Srl** appear in the account list.
+Use this to fill a local database with realistic test data.
 
-Tips:
-- It is safe to run the seed again. Existing reference rows are updated, not duplicated.
-- Demo companies you have renamed are never overwritten by the seed.
-- Exchange rates are not loaded by the seed. Amounts in a currency other than SEK show "missing rate" until exchange rates are delivered.
+1. Open a terminal in the project folder.
+2. To load the reference data and demo companies, run `npm run seed`.
+3. To load the larger test volume (about 56,000 searchable records and about 105,000 time entries), run `npm run seed -- --volume`.
+4. If a table is not yet available in your database, the loader prints `SKIP <entity>: table missing` for it and loads the rest.
+5. To run the volume load again, add `--reset`. This removes only the generated test records and keeps any records you created by hand.
+
+Tip: Generated records are marked as synthetic. Do not use them as real customer data.
+
+Warning: Without `--reset`, a second volume load stops with an error that names `--reset`. Nothing is changed in that case.
