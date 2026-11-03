@@ -207,3 +207,32 @@ The quality gate is one script, `scripts/check` (Bash) with `scripts/check.ps1` 
 - `docs/adr/`: ADR-013 (local edition) is Proposed. It defers ADR-001 and ADR-002 without replacing them. `docs/adr/README.md` is the approval index for ADR-004, 006, 007, 008, 009, 012 and 013. Status changes to Accepted only in the approving PR, with approver and approval PR recorded.
 - `.github/pull_request_template.md`: checklist line for the BUILD.md section and second-developer review.
 - `tests/docs.test.mjs`: checks the README order, BUILD.md headings and ADR index.
+
+## Money and exchange rates (US-134)
+
+**Money value.** `MoneyInput.Read` accepts only `amount` (string, at most 2 decimals, at most 16 integer digits) and `currency` (3 capitals). `amountSEK` and `rateDate` are ignored on input. The output `Money` is written by `MoneyJsonConverter` as `{amount, currency, amountSEK, rateDate}`.
+
+**Stamping.** Domain stories call `ExchangeRates.StampAsync(db, input, businessDate)` at write time and store amount, currency, amount_sek and rate_date. The rate month is the first day of the business date's month. SEK uses rate 1 and the same rateDate. `amount_sek = Math.Round(amount × rate, 2, MidpointRounding.AwayFromZero)` on `decimal`. No rate gives 422 `MISSING_EXCHANGE_RATE` with no fallback. Stamped values are not recomputed.
+
+**Data model.** Table `exchange_rate`:
+
+| Column | Type | Notes |
+|---|---|---|
+| currency | char(3) | FK to `currency(iso3)` |
+| month | date | First day of the month |
+| rate_to_sek | numeric(18,6) | Greater than 0 |
+
+Check constraints: currency <> 'SEK'; month is the first day of a month; rate_to_sek > 0. Unique index `ux_exchange_rate_currency_month`. Migration `0003_AddExchangeRate` (down drops the table). `Conventions` in `0002_ReferenceData` is internal for reuse.
+
+**API.**
+
+| Route | Role | Notes |
+|---|---|---|
+| `GET /api/v1/exchange-rates` | Signed-in user | List conventions (US-133); filter and sort on `currency`, `month`, `updatedAt` |
+| `PUT /api/v1/exchange-rates/{currency}/{yyyy-MM}` | Admin | Body `{rateToSek}` (number or string). 201 created, 200 changed, 422 for SEK, unknown or inactive currency, bad month or bad rate; 401 anonymous; 403 not admin |
+
+**Authorisation.** The admin check is `ExchangeRates.DeniedStatus`, which tests the `Admin` role claim (`ClaimTypes.Role`). It is interim until the permission engine (US-144, FT-112) replaces it. `AppUser.AdminRole` and `ExchangeRates.AdminRole` both hold `"Admin"` and should be unified then.
+
+**Seed.** `Seed/0003_exchange_rates.sql` loads EUR 11, USD 10, NOK 0.95, AED 2.72 and GBP 12.80 for every month from 2020-01 to 2030-12 (`ON CONFLICT DO NOTHING`). 660 rows in total. Re-running the seed keeps edited rates.
+
+**Deployment.** The API applies migration `0003_AddExchangeRate` at start. Then run `node scripts/seed.mjs`.

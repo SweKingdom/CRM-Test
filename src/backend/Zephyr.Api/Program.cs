@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Zephyr.Api.Auth;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
+using Zephyr.Api.Finance;
 
 // "import" mode: apply migrations and exit, no web host (the import itself is added by its own story).
 if (args.Length > 0 && args[0] == "import")
@@ -46,6 +47,8 @@ app.MapHealthChecks("/health", new HealthCheckOptions
         return context.Response.WriteAsync(JsonSerializer.Serialize(new { status = report.Status.ToString() }));
     }
 }).AllowAnonymous();
+
+app.MapExchangeRates();
 
 app.Run();
 
