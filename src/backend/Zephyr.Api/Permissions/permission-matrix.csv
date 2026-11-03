@@ -572,7 +572,7 @@ Management,dsar_request,approve,none
 Admin,account,read,org
 Admin,account,create,none
 Admin,account,update,none
-Admin,account,delete,none
+Admin,account,delete,org
 Admin,account,approve,none
 Admin,contact,read,org
 Admin,contact,create,none

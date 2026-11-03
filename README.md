@@ -171,7 +171,7 @@ It runs eight steps in a fixed order, always all of them, prints `PASS`, `FAIL` 
 | # | Step | What it runs |
 |---|---|---|
 | 1 | `lint` | `npm run typecheck` (`dotnet build -warnaserror`) and `npm run lint` (`dotnet format --verify-no-changes`); the frontend `lint` and `typecheck` scripts when it has them |
-| 2 | `tests` | `npm test`: `dotnet test` with the integration tests on PostgreSQL, then the Node tests |
+| 2 | `tests` | `npm test`: `dotnet test` with the integration tests on PostgreSQL (the permission tests included), then the Node tests |
 | 3 | `seeds` | `python3 scripts/validate_seeds.py` |
 | 4 | `openapi-regenerate` | `node tools/openapi-from-metadata/generate.mjs --out <temporary file>`; fails with "run generate" if it differs from the committed `docs/api/openapi.json` |
 | 5 | `spectral` | Spectral 6.15.0 (`.spectral.yaml`) on `docs/api/openapi.json` |
@@ -181,7 +181,17 @@ It runs eight steps in a fixed order, always all of them, prints `PASS`, `FAIL` 
 
 - **Database:** locally the script starts the Compose `db` service, waits until it is healthy and leaves it running. To use another server, set `ZEPHYR_TEST_DB` to its connection string. In CI (`CI=true`) the workflow's PostgreSQL 16 service container is used and Compose is not called. Each run creates and drops its own database.
 - **SKIP:** a step whose target does not exist yet prints `SKIP (not yet applicable: ...)` and is listed in the summary. `SKIP (needs Keycloak)` means the API schema needs sign-in and `ZEPHYR_CHECK_TOKEN` (a bearer token) is not set; Keycloak is not started in CI, so run `docker compose up -d keycloak` locally for those checks. With `REQUIRE_ALL=1` (set in CI) a step that is skipped because its tool is missing, although its target exists, fails. Locally `oasdiff` is optional and its step shows `SKIP (oasdiff is not installed)`; CI installs a pinned release and requires it.
+- **`--ui`:** `scripts/check --ui` (PowerShell: `scripts/check.ps1 -Ui`) adds a ninth step, `ui`, the Playwright permission suite in `src/frontend/e2e` against the running stack. It is not part of the eight steps and not run by CI. Until that suite exists the step fails with a message instead of passing silently.
 - The individual commands still work alone: `npm run typecheck && npm run lint && npm test && npm run build`.
+
+### Permission tests
+
+`src/backend/Zephyr.Api.Tests/Permissions/MatrixCoverageTests.cs` (US-146) runs in step 2. It has one test case for every row of `permission-matrix.csv` (role x entity x action, 665 in all). Each case checks that the stored matrix equals the row and, for an entity that has an API route, that the real route answers as the row says: scope `none` is exactly 403, any other scope is not 401, 403 or 5xx. The tests use one seeded user per role and a test sign-in handler that only the test project registers; they need PostgreSQL like the other integration tests.
+
+- An entity without an API route yet is listed in `Pending` in that file. A new `/api/v1` route fails the route test until its entity has a probe (and is removed from `Pending`), or until it is listed in `OutsideMatrix` with the reason it is not a cell of the matrix.
+- `OutsideMatrix` lists the routes that are not compared with the matrix: the by-external-id upsert (an integration route for import and migration, Admin and Integration only, see US-135), `GET /api/v1/me/permissions`, and the approver and delegation routes (US-145). An anonymous call to each must still be 401.
+- Account `create` and `update` for Salesperson and BDR stay in the matrix and have no probe until the normal POST and PATCH account routes exist (FT-113). Admin has `delete` on `account` at scope `org`, tested against `DELETE /api/v1/accounts/{id}`.
+- Not covered yet, because the code they test does not exist: time-entry privacy, the search leak test and the Playwright suite (follow-up stories).
 
 ## Build log and decisions
 

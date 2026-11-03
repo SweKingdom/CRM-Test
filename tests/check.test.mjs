@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -11,12 +11,12 @@ const STEPS = ['lint', 'tests', 'seeds', 'openapi-regenerate', 'spectral', 'oasd
 const bashAvailable = process.platform !== 'win32' && spawnSync('bash', ['--version']).status === 0;
 const bash = { skip: bashAvailable ? false : 'needs bash on a POSIX platform' };
 
-// Sources scripts/check without running it, replaces every step with a stub, and runs main.
+// Sources scripts/check without running it, replaces every step (and the optional ui step) with a stub, and runs main.
 const stub = (name, body) => `step_${name.replaceAll('-', '_')}() { ${body}; }`;
-function runCheck(bodies = {}, env = {}) {
-  const stubs = STEPS.map((name) => stub(name, bodies[name] ?? 'true')).join('\n');
+function runCheck(bodies = {}, env = {}, args = '') {
+  const stubs = [...STEPS, 'ui'].map((name) => stub(name, bodies[name] ?? 'true')).join('\n');
   const { REQUIRE_ALL, CI, ...clean } = process.env;
-  const run = spawnSync('bash', ['-c', `source scripts/check\n${stubs}\nmain`], {
+  const run = spawnSync('bash', ['-c', `source scripts/check\n${stubs}\nmain ${args}`], {
     cwd: root,
     encoding: 'utf8',
     env: { ...clean, ...env },
@@ -70,6 +70,40 @@ test('REQUIRE_ALL=1 fails a skipped step whose tool is missing, but not a "needs
   assert.equal(strict.status, 1);
   assert.deepEqual(strict.rows.filter((r) => r[0] === 'FAIL'), [['FAIL', 'oasdiff']]);
   assert.deepEqual(strict.rows.filter((r) => r[0] === 'SKIP').map((r) => r[1]), ['spectral', 'schemathesis']);
+});
+
+test('US-146 AC 5: both scripts add the ui step only on request, and it is not one of the eight', () => {
+  const script = read('scripts/check');
+  assert.doesNotMatch(/^STEPS=\(([^)]*)\)/m.exec(script)[1], /\bui\b/);
+  assert.match(script, /--ui\) steps\+=\(ui\)/);
+  assert.match(script, /^step_ui\(\)/m);
+  assert.match(read('scripts/check.ps1'), /^function Step-ui /m);
+  assert.match(read('scripts/check.ps1'), /\$Ui -or \(\$args -contains '--ui'\)/);
+});
+
+test('US-146 AC 5: --ui runs a ninth step after the eight and its failure fails the check', bash, () => {
+  const passing = runCheck({}, {}, '--ui');
+  assert.equal(passing.status, 0);
+  assert.deepEqual(passing.rows, [...STEPS, 'ui'].map((name) => ['PASS', name]));
+  const failing = runCheck({ ui: 'false' }, {}, '--ui');
+  assert.equal(failing.status, 1);
+  assert.deepEqual(failing.rows.at(-1), ['FAIL', 'ui']);
+  assert.match(failing.stdout, /^FAILED: 1 of 9 steps failed/m);
+});
+
+test('US-146 AC 5: an unknown argument is refused and runs nothing', bash, () => {
+  const { status, stdout, rows } = runCheck({}, {}, '--bogus');
+  assert.equal(status, 1);
+  assert.match(stdout, /^Usage: scripts\/check \[--ui\]/m);
+  assert.deepEqual(rows, []);
+});
+
+// Once the Playwright suite exists this test no longer applies: its own run is the proof.
+const noE2e = { skip: !bashAvailable ? 'needs bash on a POSIX platform' : existsSync(new URL('../src/frontend/e2e', import.meta.url)) ? 'the e2e suite exists' : false };
+test('US-146 AC 5: the real ui step fails with a clear message while src/frontend/e2e does not exist', noE2e, () => {
+  const run = spawnSync('bash', ['-c', 'source scripts/check; step_ui'], { cwd: root, encoding: 'utf8' });
+  assert.equal(run.status, 1);
+  assert.match(run.stdout, /--ui was requested but src\/frontend\/e2e does not exist/);
 });
 
 test('US-136: every copy of the API description path is docs/api/openapi.json (PO answer #124 and #135) and the scripts use the metadata generator', () => {

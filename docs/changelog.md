@@ -1,5 +1,6 @@
 ## Unreleased
 
+- 2026-11-03 — US-146 Automated permission test suite for seven roles: matrix tests per CSV row, route inventory and anonymous 401 checks, Admin account delete at org scope, `scripts/check --ui` step (fails until the e2e suite exists). UI, time-privacy and search tests moved to follow-up stories.
 - 2026-11-03 — US-136 Generated OpenAPI 3.1 with Spectral lint and CI drift check: API description generated to `docs/api/openapi.json`, linted with Spectral 6.15.0, drift and oasdiff breaking-change checks added to scripts and CI.
 - 2026-11-03 — US-145 Per-project time approvers and delegation: approvers per project (Admin), date-bounded delegation of approval rights with revoke, self-approval guard and approver-based scope helpers.
 - 2026-11-03 — US-144 Permission engine for API and UI routes: one engine enforces scope and role rules for API, search and UI routes; `/api/v1/me/permissions` added; default-deny endpoint test added.

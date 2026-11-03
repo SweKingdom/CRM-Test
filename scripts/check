@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Zephyr quality gate: the one script every PR passes, locally and in GitHub Actions (nothing is deployed).
 # Runs the eight steps below in this order, prints PASS/FAIL/SKIP per step and a summary, exits 1 if any step failed.
+# The tests step includes the backend permission tests (dotnet test, US-146). `scripts/check --ui` adds a ninth step, ui:
+# the Playwright permission suite against the running stack. It fails, it never skips, while that suite does not exist.
 # A step whose target does not exist yet prints "SKIP (not yet applicable ...)". It is never a silent PASS.
 # REQUIRE_ALL=1 (set in CI) turns a SKIP into a FAIL when the target exists but a tool is missing.
 # "needs Keycloak" SKIPs stay SKIPs: CI does not start Keycloak (locally: docker compose up -d keycloak).
@@ -59,7 +61,7 @@ step_lint() {
   return $rc
 }
 
-# 2. Tests: dotnet test (integration tests against the test database) and the Node tests.
+# 2. Tests: dotnet test (integration tests, the permission tests included, against the test database) and the Node tests.
 step_tests() {
   install_deps . || return 1
   ensure_test_db || return 1
@@ -154,6 +156,14 @@ step_vulnerabilities() {
   return $rc
 }
 
+# 9. ui (only with --ui): the Playwright permission suite in src/frontend/e2e, signed in as the seven Keycloak test users
+# against the running stack. Requested and missing is a failure, so asking for it never passes silently.
+step_ui() {
+  [ -d src/frontend/e2e ] || { echo "--ui was requested but src/frontend/e2e does not exist yet (the Playwright permission suite, US-146 AC 2)."; return 1; }
+  has_script src/frontend e2e || { echo "--ui was requested but src/frontend/package.json has no 'e2e' script."; return 1; }
+  install_deps src/frontend && npm --prefix src/frontend run e2e --silent
+}
+
 record() { RESULTS+=("$1|$2|$3"); echo "$1 $2${3:+ ($3)}"; }
 
 run_step() {
@@ -194,14 +204,19 @@ summary() {
 }
 
 main() {
-  local step
+  local step steps=("${STEPS[@]}")
+  case "${1:-}" in
+    "") ;;
+    --ui) steps+=(ui) ;;
+    *) echo "Usage: scripts/check [--ui]"; return 1 ;;
+  esac
   cd "$ROOT" || return 1
   if [ "${CI:-}" = true ]; then export ZEPHYR_REQUIRE_DB=1; fi
-  for step in "${STEPS[@]}"; do run_step "$step"; done
+  for step in "${steps[@]}"; do run_step "$step"; done
   summary
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-  main
+  main "$@"
   exit $?
 fi

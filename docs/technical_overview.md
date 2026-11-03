@@ -370,3 +370,18 @@ Rules:
 - Shared components: `ProblemDetails` (errors, `application/problem+json`), `Page` (list endpoints), `Money` (money fields), parameters `Limit`, `Cursor`, `Filter`, `Sort`, `IfMatch` (`If-Match`), header `ETag`.
 - Breaking changes (removed field, narrowed type, new required property) fail the oasdiff step unless a deliberate break is approved via PR label and an `oasdiff` changelog note.
 - The `openapi-regenerate` step fails with "run generate" when the committed file differs from the generated output.
+
+## Permission tests (US-146)
+
+Backend tests in `Zephyr.Api.Tests/Permissions/MatrixCoverageTests.cs` check the permission matrix (`permission-matrix.csv`) against the stored data and the live API.
+
+- **Setup:** the real app runs on the test database (`ZEPHYR_TEST_DB`) with a test-only auth handler (`X-Test-User`, `X-Test-Role`) and seven seeded role users.
+- **Matrix cases:** one case per CSV row (665). Where a probe exists, `none` must return exactly 403; other scopes must not return 401, 403 or 5xx.
+- **Probes:** account delete, app_user update, reference_data read, create and update. Probes never write data.
+- **OutsideMatrix:** `/api/v1` routes that are not matrix cells, each with a reason (by-external-id PUT is an integration route, see US-135; `me/permissions`; approver and delegation routes).
+- **Pending:** 16 entities without routes yet, mapped to their owning story. An entity is either probed or pending.
+- **Meta-tests:** every route is probed or listed in OutsideMatrix; anonymous requests get 401 on every probed route.
+- **Admin account rule:** Admin has `delete` = `org` on `account` (PO answer #156).
+- **Gate:** the tests run in step `tests` of `scripts/check`. `scripts/check --ui` (`-Ui`) adds step `ui`, which fails until `src/frontend/e2e` exists.
+- **CI:** set `ZEPHYR_REQUIRE_DB=1` so the database tests cannot be skipped.
+- **Not yet built:** Playwright UI routes, time privacy, search leak tests (follow-up stories).

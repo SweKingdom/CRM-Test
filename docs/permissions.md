@@ -104,8 +104,9 @@ From the product owner's answer #90:
 - **Consultant** reads accounts and contacts and the projects they are on; time: own only.
 - **Finance** reads accounts, contacts, opportunities, projects and time across the organisation. `update` on `time_entry` is for reopening approved entries and locking or unlocking periods; it changes an entry's status only, never hours or notes (the engine enforces that). Exporting approved billable hours is `read`.
 - **Management** reads everything for dashboards and writes nothing except its own time.
-- **Admin** reads accounts, contacts, leads, opportunities, projects and time across the organisation (needed for DSAR and retention reviews) but cannot edit business records or approve time. Admin manages users, API tokens, reference data and metadata, approves retention runs (`approve` on `retention_rule`) and runs DSAR export and erase (`dsar_request`).
+- **Admin** reads accounts, contacts, leads, opportunities, projects and time across the organisation (needed for DSAR and retention reviews) but cannot edit business records or approve time. The one business-record write it has is the soft delete of an account (`delete` on `account`, scope `org`; US-135 AC 2). Admin manages users, API tokens, reference data and metadata, approves retention runs (`approve` on `retention_rule`) and runs DSAR export and erase (`dsar_request`).
 - Every read and change by Admin and Finance on other people's time is written to the audit log. That is a separate story, not part of this matrix.
+- **The by-external-id upsert is not a matrix cell.** `PUT /api/v1/{plural}/by-external-id/{system}/{value}` is the integration route for import and migration (US-135). It is limited to Admin and Integration by role and is left out of the matrix comparison in the permission tests. The matrix describes what people may do in the product: a Salesperson's or BDR's `create` and `update` on own accounts are tested against the normal POST and PATCH routes when FT-113 builds them.
 
 ## Matrix
 
@@ -113,7 +114,7 @@ R = read, C = create, U = update, D = delete, A = approve; `—` = none. The tes
 
 | Entity | Salesperson | BDR | PM | Consultant | Finance | Management | Admin |
 |---|---|---|---|---|---|---|---|
-| account | R:org C:own U:own | R:org C:own | R:org | R:org | R:org | R:org | R:org |
+| account | R:org C:own U:own | R:org C:own | R:org | R:org | R:org | R:org | R:org D:org |
 | contact | R:org C:own U:own | R:org C:own | R:org | R:org | R:org | R:org | R:org |
 | lead | R:country | R:team C:own U:team | — | — | — | R:org | R:org |
 | opportunity | R:country C:own U:own | R:own C:own | R:own | — | R:org | R:org | R:org |
@@ -154,7 +155,7 @@ One engine (`IPermissionService`) answers for both, so the UI never offers what 
 
 The cells below are not in answer #90 and were filled in by the developer; please confirm or correct them.
 
-- `delete` is granted only where a record is a personal working item: own activities, own time entries, team members of a PM's projects, and Admin-managed setup data. Everything else is deactivated or changed by `update`.
+- `delete` is granted only where a record is a personal working item: own activities, own time entries, team members of a PM's projects, Admin-managed setup data and the Admin soft delete of an account (PO answer #156 on US-146). Everything else is deactivated or changed by `update`.
 - `activity`, `meddpicc`, `project_team_member`, `skill`, `time_type`, `service_request`, `app_user`, `reference_data`: not in answer #90. `meddpicc` follows `opportunity`; `activity` is own for Salesperson and BDR and readable by Management and Admin; `skill`, `time_type`, `reference_data` and `app_user` (a name directory for pickers) are readable by everyone and maintained by Admin; `service_request` is visible to all staff (design assumption) and created and updated by Salesperson, BDR and PM.
 - Management has `create`, `update` and `delete` on `own` time entries only ("no writes beyond their own records"). Finance and Admin have no own-time rights in this matrix.
 - Salesperson has no `create` on leads (answer #90 lists read in their country only).

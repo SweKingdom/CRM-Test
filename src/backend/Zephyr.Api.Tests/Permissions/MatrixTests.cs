@@ -127,11 +127,12 @@ public class MatrixTests(DbFixture fixture) : IAsyncLifetime
             Assert.Equal("org", Scope(rows, "Admin", entity, "read"));
         }
 
+        // The one exception is the soft delete of an account (US-135 AC 2, US-146 PO answer #156).
         foreach (var entity in BusinessEntities)
         {
             foreach (var action in new[] { "create", "update", "delete", "approve" })
             {
-                Assert.Equal("none", Scope(rows, "Admin", entity, action));
+                Assert.Equal(entity == "account" && action == "delete" ? "org" : "none", Scope(rows, "Admin", entity, action));
             }
         }
 

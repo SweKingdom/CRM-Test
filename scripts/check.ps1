@@ -1,5 +1,6 @@
 # Zephyr quality gate for Windows PowerShell: same steps, same order and same output as scripts/check (see its header).
-# Usage: powershell -File scripts/check.ps1   (exit code 1 if any step failed)
+# Usage: powershell -File scripts/check.ps1 [-Ui]   (exit code 1 if any step failed; -Ui or --ui adds the ui step)
+param([switch]$Ui)
 $ErrorActionPreference = 'Continue'
 Set-StrictMode -Version Latest
 
@@ -68,7 +69,7 @@ function Step-lint {
     return $ok
 }
 
-# 2. Tests
+# 2. Tests (the backend permission tests are part of dotnet test)
 function Step-tests {
     if (-not (Install-Deps .)) { return $false }
     if (-not (Initialize-TestDb)) { return $false }
@@ -172,6 +173,20 @@ function Step-vulnerabilities {
     return $ok
 }
 
+# 9. ui (only with -Ui): the Playwright permission suite in src/frontend/e2e against the running stack.
+# Requested and missing is a failure, so asking for it never passes silently.
+function Step-ui {
+    if (-not (Test-Path 'src/frontend/e2e')) {
+        Write-Host '--ui was requested but src/frontend/e2e does not exist yet (the Playwright permission suite, US-146 AC 2).'
+        return $false
+    }
+    if (-not (Test-NpmScript 'src/frontend' 'e2e')) {
+        Write-Host "--ui was requested but src/frontend/package.json has no 'e2e' script."
+        return $false
+    }
+    return ((Install-Deps 'src/frontend') -and (Invoke-Native npm @('--prefix', 'src/frontend', 'run', 'e2e', '--silent')))
+}
+
 function Add-Result([string]$Status, [string]$Name, [string]$Note) {
     $Results.Add([pscustomobject]@{ Status = $Status; Name = $Name; Note = $Note })
     if ($Note) { Write-Host "$Status $Name ($Note)" } else { Write-Host "$Status $Name" }
@@ -180,7 +195,12 @@ function Add-Result([string]$Status, [string]$Name, [string]$Note) {
 Set-Location (Split-Path -Parent $PSScriptRoot)
 if ($env:CI -eq 'true') { $env:ZEPHYR_REQUIRE_DB = '1' }
 
-foreach ($name in $Steps) {
+$unknown = @($args | Where-Object { $_ -ne '--ui' })
+if ($unknown.Count -gt 0) { Write-Host 'Usage: scripts/check.ps1 [-Ui]'; exit 1 }
+$Run = @($Steps)
+if ($Ui -or ($args -contains '--ui')) { $Run += 'ui' }
+
+foreach ($name in $Run) {
     Write-Host ''
     Write-Host "=== $name"
     $result = @(& "Step-$name") | Select-Object -Last 1
