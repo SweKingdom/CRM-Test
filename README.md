@@ -52,4 +52,26 @@ docker compose logs api             # JSON log lines on stdout
 
 ## Checks
 
-`npm run typecheck && npm run lint && npm test && npm run build`.
+Run the quality gate before you open a PR. GitHub Actions runs the same script on every pull request and deploys nothing.
+
+```sh
+scripts/check          # Linux, macOS, WSL, Git Bash (or: bash scripts/check)
+scripts/check.ps1      # Windows PowerShell
+```
+
+It runs eight steps in a fixed order, always all of them, prints `PASS`, `FAIL` or `SKIP` for each and a summary, and exits 1 if any step failed:
+
+| # | Step | What it runs |
+|---|---|---|
+| 1 | `lint` | `npm run typecheck` (`dotnet build -warnaserror`) and `npm run lint` (`dotnet format --verify-no-changes`); the frontend `lint` and `typecheck` scripts when it has them |
+| 2 | `tests` | `npm test`: `dotnet test` with the integration tests on PostgreSQL, then the Node tests |
+| 3 | `seeds` | `python3 scripts/validate_seeds.py` |
+| 4 | `openapi-regenerate` | `node tools/openapi-from-metadata/generate.mjs docs/api/openapi.json`; fails if the committed file differs |
+| 5 | `spectral` | Spectral 6.15.0 (`.spectral.yaml`) on `docs/api/openapi.json` |
+| 6 | `oasdiff` | `oasdiff breaking` against the copy on `main` (needs `oasdiff` installed) |
+| 7 | `schemathesis` | Schemathesis 4 against the API started on 127.0.0.1:18080 with the database `zephyr_check` (needs `schemathesis` installed) |
+| 8 | `vulnerabilities` | `dotnet list package --vulnerable --include-transitive` and `npm audit --audit-level=high` |
+
+- **Database:** locally the script starts the Compose `db` service, waits until it is healthy and leaves it running. To use another server, set `ZEPHYR_TEST_DB` to its connection string. In CI (`CI=true`) the workflow's PostgreSQL 16 service container is used and Compose is not called. Each run creates and drops its own database.
+- **SKIP:** a step whose target does not exist yet prints `SKIP (not yet applicable: ...)` and is listed in the summary; steps 4 to 7 skip until the OpenAPI generator exists. `SKIP (needs Keycloak)` means the API schema needs sign-in and `ZEPHYR_CHECK_TOKEN` (a bearer token) is not set; Keycloak is not started in CI, so run `docker compose up -d keycloak` locally for those checks. With `REQUIRE_ALL=1` (set in CI) a step that is skipped because its tool is missing, although its target exists, fails.
+- The individual commands still work alone: `npm run typecheck && npm run lint && npm test && npm run build`.
