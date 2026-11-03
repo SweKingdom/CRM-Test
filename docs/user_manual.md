@@ -15,15 +15,9 @@ Zephyr does not have its own passwords. You sign in through the organisation's i
 
 ## Running Zephyr locally
 
-Developers and testers can start the whole system on one laptop with Docker.
+The step-by-step local setup now lives in the project README, section "Run Zephyr locally". It lists every command in order, from cloning the repository to signing in as a seeded test user. Test user passwords are set in your local `.env` file and are never written in the README.
 
-1. Install Docker Desktop (or Rancher Desktop or Podman).
-2. In the project folder, run `node scripts/setup-env.mjs`. This creates `.env` with random passwords. It never overwrites an existing `.env`.
-3. Run `docker compose up --build`.
-4. Open http://localhost:8025 to see emails caught by Mailpit. Nothing is sent outside your machine.
-5. Check the API is up at http://localhost:8080/health. A healthy system returns `{"status":"Healthy"}`.
-
-Tip: `.env` holds your local passwords. Do not commit it.
+Tip: if you only need to sign in again, skip to the sign-in step. Your data stays on your computer.
 
 ## Loading reference data and demo companies
 
