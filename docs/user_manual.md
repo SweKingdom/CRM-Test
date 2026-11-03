@@ -71,30 +71,7 @@ Amounts are shown in their own currency and in SEK, so totals can be compared.
 
 ## Managing your personal API tokens
 
-Use a personal API token when a script or your AI assistant needs to act as you. A token has your permissions and nothing more.
-
-**How to create a token**
-1. Sign in to Zephyr in the browser.
-2. Open your profile and go to **API tokens**. (The API equivalent is `POST /api/v1/me/tokens`.)
-3. Enter a **Name** for the token so you can recognise it later.
-4. Optional: enter **Expires in (days)**, from 1 to 365. If you leave it empty, the token expires after 90 days.
-5. Select **Create token**.
-6. Copy the token shown. It starts with `zph_`. **It is shown only once.** Store it in your script or secret store.
-
-**Tips and warnings**
-- You can have at most 10 active tokens. To create another one, revoke an old one first.
-- Expired and revoked tokens do not count towards the limit.
-- The token list shows the **Prefix** and **Expires** date only. You cannot see the full token again; create a new one if you lose it.
-- Never paste a token into a chat, ticket or code repository. GitHub is set up to flag `zph_` tokens, but treat them as passwords.
-
-**How to revoke a token**
-1. Open **API tokens** on your profile.
-2. Select **Revoke** on the token.
-3. The token stops working immediately. Any script that uses it receives "unauthorised" and must be updated.
-
-**What happens when a token is refused**
-- An expired token, a revoked token, or a token for a deactivated account is refused with an "unauthorised" response.
-- Creating a token with more than 365 days is refused with a message about the expiry range.
+Not changed by US-136. The API description is for integrators; see the technical overview section "API description (OpenAPI)".
 
 ## Who can see and change what
 

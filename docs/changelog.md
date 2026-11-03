@@ -1,5 +1,6 @@
 ## Unreleased
 
+- 2026-11-03 — US-136 Generated OpenAPI 3.1 with Spectral lint and CI drift check: API description generated to `docs/api/openapi.json`, linted with Spectral 6.15.0, drift and oasdiff breaking-change checks added to scripts and CI.
 - 2026-11-03 — US-145 Per-project time approvers and delegation: approvers per project (Admin), date-bounded delegation of approval rights with revoke, self-approval guard and approver-based scope helpers.
 - 2026-11-03 — US-144 Permission engine for API and UI routes: one engine enforces scope and role rules for API, search and UI routes; `/api/v1/me/permissions` added; default-deny endpoint test added.
 - 2026-11-03 — US-138 Claude usage log per story and PR description note: added a "Claude usage" section to the PR template; usage is totalled with `node tools/claude-usage/cli.mjs report` (no new script or format).
