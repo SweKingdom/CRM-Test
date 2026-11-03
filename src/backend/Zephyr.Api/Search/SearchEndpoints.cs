@@ -36,7 +36,7 @@ public static class SearchEndpoints
     /// </summary>
     private static readonly string[] AnyRole = PermissionSeeder.Roles.Select(r => r.Key).ToArray();
 
-    private static readonly Regex Word = new(@"[\p{L}\p{N}]+", RegexOptions.CultureInvariant);
+    private static readonly Regex LetterOrDigitRuns = new(@"[\p{L}\p{N}]+", RegexOptions.CultureInvariant);
 
     /// <summary>The query words as a prefix tsquery (<c>tsq</c>) and as one normalised phrase (<c>phrase</c>).</summary>
     private const string Query =
@@ -144,7 +144,7 @@ public static class SearchEndpoints
 
             await permissions.EnsureLoadedAsync(context.RequestAborted);
             var scope = ReadScope(permissions, await context.CurrentUserAsync());
-            var tokens = Word.Matches(text).Select(m => m.Value).ToArray();
+            var tokens = SplitIntoTokens(text);
             if (tokens.Length == 0)
             {
                 return Results.Ok(new { Items = Array.Empty<Hit>(), Fallback = false });
@@ -156,6 +156,10 @@ public static class SearchEndpoints
 
         return routes;
     }
+
+    /// <summary>The runs of letters and digits in the query; punctuation only separates them.</summary>
+    private static string[] SplitIntoTokens(string text) =>
+        LetterOrDigitRuns.Matches(text).Select(found => found.Value).ToArray();
 
     /// <summary>
     /// The caller's read scope per entity type, from the permission matrix. A caller who reads none of the types gets a 403;
