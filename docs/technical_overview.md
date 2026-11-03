@@ -100,3 +100,75 @@ Keycloak stands in for Entra locally. It runs in dev mode on localhost only.
 **Tests:** `SeedTests.cs` (AC 1–4) needs `ZEPHYR_TEST_DB`; CI sets `ZEPHYR_REQUIRE_DB=1`. `tests/seeds.test.mjs` covers AC 5 using `tests/seeds_broken/`.
 
 **Not in this story:** exchange rates (US-134), volume seed set (US-131).
+
+## API conventions (US-133)
+
+All endpoints live under `/api/v1`, use plural camelCase nouns, and are wired with `services.AddApiConventions()` and `app.UseApiConventions()`.
+
+**Paging.** `limit` (default 50, max 200) and `cursor`. Responses are `{items, nextCursor}`; `nextCursor` is null on the last page. Keyset paging on the sort keys plus `id`. The cursor holds the sort signature; a foreign or malformed cursor returns 400.
+
+**Filter and sort.** `filter[field][op]=value` and `sort=-field`. Operators: `eq`, `ne`, `in` (any allow-listed field); `gt`, `gte`, `lt`, `lte` (numbers and dates); `contains` (text, case-insensitive, wildcards literal). Sort keys must be non-nullable. Unknown names return 400.
+
+**Errors.** RFC 9457 `application/problem+json` with `type` (`urn:zephyr:problem:<code>` or `about:blank`), `title`, `status`, `detail`, `traceId`. Validation returns 422 with `errors[]` of `{field, code, message}`. Malformed JSON returns 400. Unhandled errors return 500 without a stack trace.
+
+**Concurrency.** Strong ETag `"<base64url sha256(id + updated_at ticks)>"`. Single-resource GET returns `ETag` and honours `If-None-Match` (304). PATCH requires `If-Match`: missing returns 428, stale returns 412. `updated_at` is the EF concurrency token. Timestamps are truncated to microseconds so the ETag after a save matches the next read.
+
+**Write hooks.** POST, PUT and PATCH endpoints end with `.WithWriteHooks()`. `IWriteValidator` (no-op default) is the seam for FT-113 to FT-125; FT-125 registers the metadata validator. A test fails for any untagged write endpoint.
+
+**Audit user.** `AuditInterceptor` stamps `created_by` and `updated_by` from the `zephyr_user_id` claim (`HttpCurrentUser`). Missing, anonymous or non-GUID claims map to `SystemUser`. The IdP `sub` claim is ignored. US-140 (FT-111) sets `zephyr_user_id` at sign-in; US-142 personal API tokens set the same claim.
+
+**Business dates.** `BusinessClock` works in Europe/Stockholm. A period is `yyyy-MM`; `LockInstant(period)` is 00:00 Stockholm on the 3rd of the next month. Linux images need tzdata or ICU.
+
+**Data.** No schema change for US-133; the migration snapshot is unchanged.
+
+## Authentication and sign-in (US-140)
+
+**Flow:** OpenID Connect authorisation code with PKCE, via the standard ASP.NET Core OIDC handler. One OIDC scheme per provider, callback `/signin-oidc-{name}`. Session is a cookie (HttpOnly, SameSite=Lax, Secure when not localhost). `SaveTokens=false`, `MapInboundClaims=false`. Scopes: openid, profile, email.
+
+**Endpoints**
+
+| Route | Access | Notes |
+|---|---|---|
+| GET /auth/login?provider=&returnUrl= | Anonymous | Challenge. `returnUrl` must be a local relative path, otherwise 400. |
+| POST /auth/logout | Session | Clears cookie, 204. |
+| GET /auth/me | Session | 200 `{id,name,email,roles,homeCountry}`; 401 anonymous. |
+| GET /auth/denied | Anonymous | 403 problem+json (RFC 9457). |
+| GET /health | Anonymous | Health check. |
+
+All other `/api/v1/*` routes require an authenticated user (default-deny fallback policy).
+
+**User matching (OnTokenValidated)**
+1. Match on (issuer, subject), not deleted. Found: refuse if `active=false`, else sign in.
+2. Not found, no active admin exists, and (issuer, subject) equal the bootstrap values: create an active Admin, log Warning and write `audit_log` `bootstrap_admin_used`.
+3. Not found, provider `EmailTrusted=true`, claim `email_verified=true`, and an active user with that email and null issuer/subject exists: link and sign in. An email already linked to another subject is refused.
+4. Otherwise refuse (`context.Fail`, redirect to `/auth/denied`) and log the reason. Tokens are never logged.
+
+Session claims: `sub` = `app_user.id`, roles, issuer. `last_login_at` is updated on sign-in.
+
+**CSRF:** cookie-authenticated POST, PUT, PATCH and DELETE to `/api/v1/*` require header `X-Zephyr-Csrf: 1` and a same-origin `Origin`. Otherwise 403 `CSRF_REJECTED`. Bearer-token calls are exempt. GET is unaffected.
+
+**CORS:** none. The SPA is same-origin. The Vite dev server proxies `/api`, `/auth` and `/signin-oidc-*`.
+
+**Data model: `app_user`** (plus baseline columns)
+
+| Column | Type | Notes |
+|---|---|---|
+| name | text not null | |
+| email | text not null | Unique index on lower(email) where deleted_at is null. |
+| issuer | text null | Null until linked. |
+| subject | text null | Unique (issuer, subject) where both not null. |
+| home_country | char(2) null | FK countries. |
+| roles | text[] not null, default '{}' | Values: Salesperson, BDR, PM, Consultant, Finance, Management, Admin. |
+| active | bool not null, default true | |
+| last_login_at | timestamptz null | UTC. |
+
+No password or secret column exists. Users are pre-provisioned; there is no self sign-up.
+
+**Configuration**
+
+| Variable | Notes |
+|---|---|
+| ZEPHYR_AUTH__PROVIDERS__n__NAME / AUTHORITY / CLIENTID / CLIENTSECRET / EMAILTRUSTED | Per provider. Index 0 = `zephyr`, index 1 = `zephyr-b`. Providers only from configuration. |
+| ZEPHYR_BOOTSTRAP_ADMIN_ISSUER / ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT | Optional. Used only while no active admin exists. |
+
+Secrets live only in the gitignored `.env`. Provider 1 `CLIENTSECRET` must equal `OIDC_CLIENT_SECRET`.
