@@ -2,3 +2,5 @@
 - DB-backed tests are skipped locally without PostgreSQL, so review DB-affecting changes by hand against the test fixtures, since the first real run happens in CI with ZEPHYR_REQUIRE_DB=1. (US-129, review)
 - Before finalizing, read the story's PO answers and clarification comments and apply each stated decision (such as file paths) to code, docs and tests. (US-132, qa)
 - When a path or name is mirrored in several scripts (bash and PowerShell), docs and tests, grep the whole repo for the old value and update every copy together. (US-132, qa)
+- When a PO answer says to remove or drop a test, delete that specific test and re-grep the test files for its name or assertion before handing back for QA. (US-138, qa)
+- When the PO accepts an AC as met differently, update tests that assert the original approach, not only the code and docs. (US-138, qa)
