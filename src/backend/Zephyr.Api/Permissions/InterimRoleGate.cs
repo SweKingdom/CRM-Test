@@ -18,8 +18,11 @@ public static class InterimRoleGate
     /// <summary>Least privilege until the matrix defines delete per role.</summary>
     public static readonly string[] DeleteRoles = ["Admin"];
 
-    /// <summary>Passes when the signed-in, active user holds one of <paramref name="roles"/>; otherwise a 403 problem.</summary>
-    public static async Task RequireAsync(HttpContext context, string[] roles)
+    /// <summary>
+    /// Passes when the signed-in, active user holds one of <paramref name="roles"/> and returns all roles the user holds;
+    /// otherwise a 403 problem.
+    /// </summary>
+    public static async Task<string[]> RequireAsync(HttpContext context, string[] roles)
     {
         var userId = context.RequestServices.GetRequiredService<ICurrentUser>().UserId;
         if (userId is not null)
@@ -31,7 +34,7 @@ public static class InterimRoleGate
                 .SingleOrDefaultAsync(context.RequestAborted);
             if (held is not null && held.Intersect(roles).Any())
             {
-                return;
+                return held;
             }
         }
 

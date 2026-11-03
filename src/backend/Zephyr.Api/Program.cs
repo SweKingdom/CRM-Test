@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Zephyr.Api.Activities;
 using Zephyr.Api.Auth;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
@@ -55,6 +56,9 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 }).AllowAnonymous();
 
 app.MapExchangeRates();
+
+// Activities (US-151): the one timeline record for calls, meetings, notes, tasks and emails.
+app.MapActivityEndpoints();
 
 // By-external-id upsert and soft delete (US-135) for every entity in the registry.
 app.MapExternalUpsert(EntityRegistry.Accounts);
