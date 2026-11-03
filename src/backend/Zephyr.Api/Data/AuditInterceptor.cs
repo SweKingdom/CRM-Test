@@ -10,6 +10,31 @@ public interface ICurrentUser
     Guid? UserId { get; }
 }
 
+/// <summary>
+/// The user of the authenticated request: the app_user id in the Zephyr-specific <c>zephyr_user_id</c> claim.
+/// Sign-in (US-140) and personal API tokens (US-142) set it; the identity provider's own <c>sub</c> is not an app user id.
+/// Never read from a request body. Null when the request is anonymous or the claim is not a user id
+/// (writes then use <see cref="SystemUser"/>).
+/// </summary>
+public sealed class HttpCurrentUser(IHttpContextAccessor accessor) : ICurrentUser
+{
+    public const string ClaimType = "zephyr_user_id";
+
+    public Guid? UserId
+    {
+        get
+        {
+            var principal = accessor.HttpContext?.User;
+            if (principal?.Identity?.IsAuthenticated != true)
+            {
+                return null;
+            }
+
+            return Guid.TryParse(principal.FindFirst(ClaimType)?.Value, out var id) ? id : null;
+        }
+    }
+}
+
 public static class SystemUser
 {
     /// <summary>Fixed app_user id used for seeds, migrations and other writes without a signed-in user.</summary>
@@ -45,7 +70,10 @@ public class AuditInterceptor(ICurrentUser? currentUser = null) : SaveChangesInt
             return;
         }
 
-        var now = DateTime.UtcNow;
+        // PostgreSQL keeps microseconds. Truncating here makes the in-memory updated_at equal the stored one,
+        // so an ETag computed right after a save equals the ETag of the next read.
+        var ticks = DateTime.UtcNow.Ticks;
+        var now = new DateTime(ticks - ticks % 10, DateTimeKind.Utc);
         var user = currentUser?.UserId ?? SystemUser.Id;
 
         foreach (var entry in context.ChangeTracker.Entries<IEntity>().ToList())

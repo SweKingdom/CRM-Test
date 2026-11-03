@@ -1,9 +1,13 @@
--- Synthetic time entries (US-131). Assumes time_entry(project_id, work_date, duration_minutes, notes).
+-- Synthetic time entries (US-131). Assumes time_entry(project_id, user_id, time_type, work_date, duration_minutes, notes);
+-- time_type holds a time_type.key. user_id is one of 100 synthetic ids derived from the seed; the owning story
+-- (or US-150) must align this with app_user if it adds a foreign key.
 -- Exactly trailing_12_months entries fall in [anchor - 12 months, anchor], spread evenly over those days; the rest
 -- spread evenly over the 1,460 days before the window, so the split never depends on rounding or random draws.
-INSERT INTO time_entry (id, project_id, work_date, duration_minutes, notes, custom)
+INSERT INTO time_entry (id, project_id, user_id, time_type, work_date, duration_minutes, notes, custom)
 SELECT pg_temp.uid('time_entry', n),
        pg_temp.uid('project', 1 + pg_temp.h('time_entry', n, 'a') % pg_temp.target('project')),
+       pg_temp.uid('user', 1 + pg_temp.h('time_entry', n, 'u') % 100),
+       pg_temp.pick('time_types', pg_temp.h('time_entry', n, 't')),
        CASE WHEN n <= w.recent
             THEN w.start + (((n - 1) * (w.days + 1)) / w.recent)
             ELSE w.start - 1 - (((n - w.recent - 1) * 1460) / (w.total - w.recent))

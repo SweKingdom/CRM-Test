@@ -99,13 +99,20 @@ public class VolumeSeedTests(DbFixture db) : IAsyncLifetime
     private static List<(string Entity, string Table)> Loaded(string connectionString) =>
         Entities().Where(e => TableExists(connectionString, e.Table)).ToList();
 
-    /// <summary>md5(string_agg(id::text||name, ',' ORDER BY id)); time entries have no name, so notes stand in.</summary>
+    /// <summary>
+    /// Checksum per entity: md5(string_agg(id::text || name, ',' ORDER BY id)). Time entries have no name, so they use
+    /// id, user_id, work_date, duration_minutes and time_type. Nullable columns are wrapped in coalesce, because a
+    /// null would make the whole concatenated value null and string_agg would skip the row.
+    /// </summary>
     private static string Checksum(string connectionString, string entity, string table)
     {
-        var column = entity == "time_entry" ? "notes" : "name";
+        var value = entity == "time_entry"
+            ? "id::text || coalesce(user_id::text, '') || coalesce(work_date::text, '') || " +
+              "coalesce(duration_minutes::text, '') || coalesce(time_type::text, '')"
+            : "id::text || coalesce(name, '')";
         return Scalar<string>(
             connectionString,
-            $"select md5(string_agg(id::text || {column}, ',' order by id)) from {table}");
+            $"select md5(string_agg({value}, ',' order by id)) from {table}");
     }
 
     private async Task<string> CreateFreshDatabaseAsync()

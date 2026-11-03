@@ -2,26 +2,22 @@
 
 ## Signing in locally
 
-Use this chapter to sign in to the local test environment.
+Zephyr does not have its own passwords. You sign in through the organisation's identity provider.
 
-1. Start the stack: run `scripts/render-realms.sh` (or `scripts/render-realms.ps1`), then `docker compose up`.
-2. Open http://localhost:8180 and choose the realm `zephyr`.
-3. Sign in with one of the test users: admin, salesperson, BDR, project manager, consultant, finance or management, all at `@example.com`.
-4. Use the password you set for that user in your `.env` file. Passwords are never stored in the repository.
+1. Open Zephyr in your browser and select **Sign in**. (Local: `/auth/login?provider=zephyr`.)
+2. Enter your work account in the identity provider's sign-in page.
+3. You are returned to Zephyr and see your name in the header.
 
-Tip: the test users are for local testing only. Do not use them outside your own machine.
+**Tips**
+- If you have no Zephyr account yet, the sign-in is refused. Ask an administrator to create your user.
+- If you see the message "Your account is not set up in Zephyr. Contact an administrator.", your account exists in the identity provider but is not linked to a Zephyr user, or it is deactivated.
+- Signing out clears your session in this browser.
 
 ## Running Zephyr locally
 
-Developers and testers can start the whole system on one laptop with Docker.
+The step-by-step local setup now lives in the project README, section "Run Zephyr locally". It lists every command in order, from cloning the repository to signing in as a seeded test user. Test user passwords are set in your local `.env` file and are never written in the README.
 
-1. Install Docker Desktop (or Rancher Desktop or Podman).
-2. In the project folder, run `node scripts/setup-env.mjs`. This creates `.env` with random passwords. It never overwrites an existing `.env`.
-3. Run `docker compose up --build`.
-4. Open http://localhost:8025 to see emails caught by Mailpit. Nothing is sent outside your machine.
-5. Check the API is up at http://localhost:8080/health. A healthy system returns `{"status":"Healthy"}`.
-
-Tip: `.env` holds your local passwords. Do not commit it.
+Tip: if you only need to sign in again, skip to the sign-in step. Your data stays on your computer.
 
 ## Loading reference data and demo companies
 

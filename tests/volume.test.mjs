@@ -38,6 +38,18 @@ test('AC 3: every generated insert is idempotent on id and carries the synthetic
   }
 });
 
+test('AC 2: time entries fill every column the checksum covers, with real time type keys', () => {
+  const sql = readFileSync(`${generate}/06_time_entry.sql`, 'utf8');
+  for (const column of ['user_id', 'time_type', 'work_date', 'duration_minutes']) {
+    assert.match(sql.split('SELECT')[0], new RegExp(`\\b${column}\\b`), column);
+  }
+  const reference = readFileSync('Seed/0001_reference_data.sql', 'utf8');
+  const known = new Set([...reference.slice(reference.indexOf('INSERT INTO time_type')).matchAll(/\('([a-z_]+)', '/g)].map((m) => m[1]));
+  const { time_types: used } = JSON.parse(readFileSync('tools/search-benchmark/data/time_types.json', 'utf8'));
+  assert.ok(used.length > 0);
+  for (const key of used) assert.ok(known.has(key), `unknown time type ${key}`);
+});
+
 test('--seed must be a whole number', () => {
   const r = seed('--volume', '--seed', 'abc');
   assert.equal(r.status, 1);

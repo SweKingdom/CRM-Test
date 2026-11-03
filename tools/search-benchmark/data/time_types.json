@@ -1,0 +1,7 @@
+{
+  "time_types": [
+    "client_work", "client_work", "client_work", "client_work", "client_work", "client_work",
+    "overtime", "internal_project", "internal_development", "presales_support",
+    "support", "customer_outreach", "travel"
+  ]
+}

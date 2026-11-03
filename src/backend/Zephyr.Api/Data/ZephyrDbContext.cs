@@ -35,6 +35,34 @@ public class ExternalId : IEntity
     public string Value { get; set; } = "";
 }
 
+/// <summary>
+/// A person who can sign in (US-140). Users are pre-provisioned: <see cref="Issuer"/> and <see cref="Subject"/> stay null
+/// until the first sign-in links the identity provider's user. No password or secret of any kind is stored.
+/// </summary>
+public class AppUser : IEntity
+{
+    public const string AdminRole = "Admin";
+
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public Guid? UpdatedBy { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string Custom { get; set; } = "{}";
+    public string Name { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string? Issuer { get; set; }
+    public string? Subject { get; set; }
+    public string? HomeCountry { get; set; }
+
+    /// <summary>Salesperson, BDR, PM, Consultant, Finance, Management, Admin.</summary>
+    public string[] Roles { get; set; } = [];
+
+    public bool Active { get; set; } = true;
+    public DateTime? LastLoginAt { get; set; }
+}
+
 /// <summary>Append-only record of who did what (enforced by a database trigger).</summary>
 public class AuditLog
 {
@@ -50,6 +78,7 @@ public class AuditLog
 public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbContext(options)
 {
     public DbSet<ExternalId> ExternalIds => Set<ExternalId>();
+    public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     public static string ConnectionStringFromEnvironment() =>
@@ -69,7 +98,9 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
             var entity = modelBuilder.Entity(type.ClrType);
             entity.Property(nameof(IEntity.Id)).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(nameof(IEntity.CreatedAt)).HasDefaultValueSql("now()");
-            entity.Property(nameof(IEntity.UpdatedAt)).HasDefaultValueSql("now()");
+            // updated_at is the concurrency token: an UPDATE only succeeds while updated_at is still the value that was
+            // read, which is what makes PATCH with If-Match race-free (ETag = id + updated_at).
+            entity.Property(nameof(IEntity.UpdatedAt)).HasDefaultValueSql("now()").IsConcurrencyToken();
             entity.Property(nameof(IEntity.Custom)).HasColumnType("jsonb").HasDefaultValueSql("'{}'::jsonb");
 
             // Soft delete: default queries exclude rows with deleted_at set.
@@ -85,6 +116,17 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
             e.ToTable("external_id", t => t.HasCheckConstraint("ck_external_id_system", "\"system\" IN ('dynamics', 'fortnox')"));
             e.HasIndex(x => new { x.System, x.EntityType, x.Value }).IsUnique().HasDatabaseName("ux_external_id_system_entity_type_value");
             e.HasIndex(x => new { x.EntityType, x.EntityId }).HasDatabaseName("ix_external_id_entity_type_entity_id");
+        });
+
+        // The unique index on lower(email) (an expression index) is created by the migration only.
+        // active and roles have no model default: EF must always send them, a default would swallow active = false.
+        modelBuilder.Entity<AppUser>(e =>
+        {
+            e.ToTable("app_user");
+            e.Property(x => x.HomeCountry).HasColumnType("character(2)");
+            e.Property(x => x.Roles).HasColumnType("text[]");
+            e.HasIndex(x => new { x.Issuer, x.Subject }).IsUnique().HasFilter("issuer is not null and subject is not null")
+                .HasDatabaseName("ux_app_user_issuer_subject");
         });
 
         modelBuilder.Entity<AuditLog>(e =>
