@@ -3,6 +3,7 @@ node_modules/
 bin/
 obj/
 dist/
+out/
 
 # Secrets and generated files: never commit
 .env

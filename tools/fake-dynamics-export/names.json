@@ -1,0 +1,50 @@
+{
+  "givenNames": [
+    "Anders", "Anna", "Björn", "Birgit", "Carl", "Cecilia", "Daniel", "Elin", "Erik", "Emma",
+    "Filip", "Frida", "Gustav", "Gunilla", "Hanna", "Henrik", "Ida", "Ingrid", "Johan", "Josefin",
+    "Karin", "Karl", "Lars", "Linnea", "Magnus", "Maria", "Mikael", "Malin", "Niklas", "Nora",
+    "Olof", "Olivia", "Per", "Petra", "Rasmus", "Rebecka", "Sara", "Simon", "Stefan", "Sofia",
+    "Thomas", "Tove", "Ulf", "Ulrika", "Viktor", "Vera", "Axel", "Agnes", "Oskar", "Astrid",
+    "Mattias", "Helena", "Jonas", "Lena", "Patrik", "Camilla", "Fredrik", "Eva", "David", "Julia"
+  ],
+  "familyNames": [
+    "Lindholm", "Bergström", "Ekström", "Nilsson", "Svensson", "Johansson", "Karlsson", "Andersson", "Gustafsson", "Eriksson",
+    "Olsson", "Larsson", "Persson", "Lindqvist", "Holmberg", "Forsberg", "Sandberg", "Hedlund", "Wallin", "Nyström",
+    "Engström", "Berglund", "Lundgren", "Sjöberg", "Strand", "Åkesson", "Blomqvist", "Dahlberg", "Falk", "Granath",
+    "Hellström", "Isaksson", "Jansson", "Kvist", "Lagerlöf", "Mattsson", "Norberg", "Öberg", "Palm", "Ramberg",
+    "Sundin", "Thorsell", "Wikström", "Zetterberg", "Ahlgren", "Bäckström", "Carlsson", "Dalin", "Edlund", "Fredriksson",
+    "Hagberg", "Ivarsson", "Jonsson", "Källström", "Lund", "Månsson", "Nordin", "Rosén", "Sten", "Tegner"
+  ],
+  "companyStems": [
+    "Lindholm", "Ekbacka", "Björnvik", "Granvik", "Solberga", "Havsvik", "Stenhamra", "Furudal", "Mossberga", "Ängsvik",
+    "Vindelby", "Nordhamn", "Kullaberga", "Ljungvik", "Tallbacka", "Strandvik", "Bergsby", "Ringsta", "Skogsvik", "Älvsta",
+    "Lövåsen", "Hedby", "Grytvik", "Fjällby", "Rosendal", "Dalsvik", "Mörkvik", "Sandbacka", "Klockarby", "Ormsta",
+    "Viksberga", "Hagaby", "Lunnabo", "Näsvik", "Torpby", "Brännvik", "Kärrbacka", "Eksta", "Fårdal", "Gransta",
+    "Hjortby", "Isbacka", "Jakobsvik", "Kalvbo", "Lerdal", "Myrbacka", "Norsta", "Oxbacka", "Pilvik", "Rönnby",
+    "Sjövik", "Tjärby", "Ulvsta", "Vallbo", "Åsbacka", "Östbo", "Bokvik", "Duvbo", "Fagerby", "Hasselvik",
+    "Ingabo", "Kvarnby"
+  ],
+  "companyWords": [
+    "Demo", "Logistik", "Konsult", "Industri", "Data", "Bygg", "Energi", "Media", "Fastigheter", "Transport",
+    "Teknik", "Design", "Livsmedel", "Maskin", "Försäkring", "Handel", "Hälsa", "Skog", "Verkstad", "Mjukvara",
+    "Finans", "Rederi", "Textil", "Analys", "Service"
+  ],
+  "companyForms": ["AB", "Oy", "AS", "A/S", "GmbH", "Ltd"],
+  "cities": [
+    "Stockholm", "Göteborg", "Malmö", "Uppsala", "Linköping", "Örebro", "Västerås", "Norrköping", "Helsingborg", "Jönköping",
+    "Umeå", "Lund", "Borås", "Sundsvall", "Gävle", "Oslo", "Bergen", "Trondheim", "Copenhagen", "Aarhus",
+    "Odense", "Helsinki", "Tampere", "Turku", "Hamburg", "Berlin", "Munich", "London", "Manchester", "Edinburgh"
+  ],
+  "jobTitles": [
+    "Managing Director", "Chief Financial Officer", "Head of IT", "Project Manager", "Procurement Manager", "Operations Manager",
+    "Sales Director", "Marketing Manager", "HR Manager", "Product Owner", "Controller", "Office Manager"
+  ],
+  "skills": [
+    "JavaScript", "TypeScript", "Python", "C#", "Java", "Go", "Rust", "SQL", "PostgreSQL", "React",
+    "Angular", "Vue", "Node.js", ".NET", "Azure", "AWS", "Google Cloud", "Docker", "Kubernetes", "Terraform",
+    "Git", "CI/CD", "Power BI", "Power Apps", "Dynamics 365", "Salesforce", "SAP", "Excel", "Project management", "Scrum",
+    "Kanban", "Agile coaching", "Business analysis", "Requirements engineering", "UX design", "UI design", "Figma", "Testing", "Test automation", "Cypress",
+    "Security", "Data engineering", "Machine learning", "Data science", "ETL", "Databricks", "Snowflake", "Kafka", "REST APIs", "GraphQL",
+    "Microservices", "Linux", "Networking", "ITIL", "Change management", "Stakeholder management", "Workshop facilitation", "Technical writing", "Procurement", "Cloud architecture"
+  ]
+}
