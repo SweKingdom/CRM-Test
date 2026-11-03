@@ -14,6 +14,8 @@ public static class Endpoints
     {
         app.MapUsersEndpoints();
         app.MapPermissionEndpoints();
+        // Per-project time approvers and delegation (US-145).
+        app.MapApprovers();
 
         // Anonymous. 200 {"status":"Healthy"} when the API is up and SELECT 1 succeeds, 503 otherwise.
         app.MapHealthChecks("/health", new HealthCheckOptions

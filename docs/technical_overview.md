@@ -320,3 +320,33 @@ Covers US-143 and US-144. Enforcement is in `Permissions/`.
 - PR template: `.github/pull_request_template.md` has a `## Claude usage` section (Tokens in, Tokens out, Cost (USD)). The author pastes the story total from the report.
 - No separate usage script or log format exists (PO #88). Tests in `tests/docs.test.mjs` cover the template section.
 - `tools/claude-usage/` and `docs/claude-usage/` are not part of this workspace branch.
+
+## Approvers and delegation (US-145)
+
+**Tables** (migration `0005_Approvers`, SQL only; the EF model is unchanged)
+
+| Table | Columns | Notes |
+|---|---|---|
+| `project_approver` | `project_id uuid not null`, `user_id` FK to `app_user`, `created_at`, `created_by`, PK (`project_id`, `user_id`) | No project FK until US-161. Hard delete, no soft delete. |
+| `approval_delegation` | `delegator_id`, `delegate_id`, `from_date`, `to_date`, `revoked_at`, `deleted_at`, conventional audit columns | Check `ck_approval_delegation_dates` (`to_date >= from_date`), check `ck_approval_delegation_not_self` (`delegator_id <> delegate_id`), index on (`delegate_id`, `from_date`, `to_date`). |
+
+**Endpoints** (`Permissions/Approvers.cs`, registered by `MapApprovers()` from `MapZephyrEndpoints()`)
+
+| Route | Role | Result |
+|---|---|---|
+| `PUT /api/v1/projects/{id}/approvers/{userId}` | Admin | 204, idempotent; 404 for unknown user |
+| `DELETE /api/v1/projects/{id}/approvers/{userId}` | Admin | 204, idempotent |
+| `POST /api/v1/delegations` | Any role; Admin may pass `delegatorId` | 201; 422 or 403 as in the task document |
+| `GET /api/v1/delegations` | Any role | Own delegations; Admin sees all |
+| `DELETE /api/v1/delegations/{id}` | Delegator or Admin | 204; 404 if unknown, already revoked or not the caller's |
+
+**Helpers** (DB-backed, never cached; `today` = `BusinessClock.Today()`)
+- `ApproverScopeAsync(userId, today)`: the projects the user approves directly, plus the delegator's projects for active delegations.
+- `IsApproverOfAsync(userId, projectId, today)`: true when the project is in that scope.
+- `EnsureNotSelfApproval(entryUserId, callerId)`: throws a 403 problem when they match.
+
+**Active delegation:** `revoked_at IS NULL AND deleted_at IS NULL AND today BETWEEN from_date AND to_date`. Delegation is not transitive.
+
+**Audit:** `approver_added`, `approver_removed`, `delegation_created`, `delegation_revoked`.
+
+**Deferred:** the `PermissionService` OR-predicate (US-144), the PM-of-project rule and project FK (US-161), and endpoint-level self-approval and time-entry 404 checks (US-166, US-170). Details in `docs/permissions.md`.
