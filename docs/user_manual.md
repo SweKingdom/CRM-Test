@@ -104,3 +104,17 @@ Every pull request for a story records the Claude usage for that story.
 4. Enter the totals in **Tokens in**, **Tokens out** and **Cost (USD)**.
 
 Tip: the usage files are written automatically by the pre-commit hook. Do not edit them by hand.
+
+## Searching for records
+
+How to find an account quickly, even with a partial or misspelled name.
+
+1. Type at least 2 characters in the search box.
+2. Results list the best matches first. Exact name matches come first, then names that start with your text, then close matches.
+3. Accents are ignored: typing "malmo" finds "Malmö".
+4. If few exact matches exist, the search also shows close matches (small typos, partial words).
+5. You only see records you are allowed to read. If a record you expect is missing, check with your administrator.
+
+Tips:
+- Searches shorter than 2 characters or longer than 100 characters are rejected with a message.
+- Searching for text without letters or digits returns no results.

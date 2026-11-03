@@ -388,25 +388,18 @@ Backend tests in `Zephyr.Api.Tests/Permissions/MatrixCoverageTests.cs` check the
 
 ## Search (US-147)
 
-Endpoint: `GET /api/v1/search?q=&types=&limit=`. Response: `{items:[{type,id,title,snippet,score}], fallback}`.
+**Migration:** `0004_SearchDocument` creates `f_unaccent`, `f_search_norm`, table `search_document` (GIN indexes `ix_search_document_tsv` and `ix_search_document_text_trgm`), `search_upsert`, and helper `search_install_trigger(table, type, title_expr, text_expr, [subtitle, owner_id, account_id, country_code, business_unit, hidden])`. Only the account trigger exists; each later entity story adds one helper call in its own migration with `p_hidden` (for contact and lead: `new.anonymised_at is not null`) and its trigger test.
 
-| Item | Rule |
-|---|---|
-| `q` | 2 to 100 characters after trimming. Otherwise 400 problem+json. |
-| `limit` | 1 to 50, default 20. |
-| `types` | CSV of `account`, `contact`, `lead`, `opportunity`, `project`. |
-| Access | `RequireRoles` with every matrix role. 401 without a session, 403 when the caller can read none of the searchable types. |
+**Sync:** triggers run in the same transaction as the change (insert, update, delete). Soft-deleted rows (`deleted_at`) are removed from the index; restoring them re-adds them.
 
-**Data model:** table `search_document` holds one row per searchable record, with normalised `title`, `text`, `tsv` (GIN) and `text gin_trgm_ops` (GIN). Also stores `type`, `owner_id`, `account_id`, `country_code`, `business_unit`, `updated_at`, `subtitle`, `weight`.
+**Normalisation:** `f_search_norm` = trim(punctuation→space(lower(f_unaccent(x)))), used for stored text, titles and queries.
 
-**Sync:** `search_install_trigger(table, type, title_expr, text_expr, ...)` creates an insert, update and delete trigger in the same transaction. Parameter `p_hidden` removes the row when the expression is true (for example `new.deleted_at is not null or new.anonymised_at is not null`). Only the `account` trigger exists (`owner_id` = `created_by`, `country_code`).
+**API:** `GET /api/v1/search?q=&types=&limit=`. `q` 2–100 characters, `limit` 1–50 (default 20), `types` CSV of account, contact, lead, opportunity, project. Response `{items:[{type,id,title,snippet,score}], fallback}`. Errors: 400 problem+json (bad parameters, repeated or unknown parameters), 401 without session, 403 without a matrix role that may read a searchable type.
 
-**Search steps:** full-text first (ranking: exact title, title prefix, `ts_rank_cd` with recent-activity boost, entity weight, `updated_at`). Trigram second, only when fewer than 5 full-text items are returned and the limit is greater than 5: `word_similarity` with threshold 0.3. `fallback` is `true` when the trigram step ran.
+**Read scope:** per type, `IPermissionService.Scope(user, type, "read")` gives the scope arrays `@org`, `@own`, `@team`, `@country`, applied as a WHERE filter before ranking. Account owner is `created_by`; account country is the contracting country. The route is declared with `RequireRoles` for all matrix roles. Integration clients get 403.
 
-**Permissions:** `IPermissionService.Scope(user, type, "read")` per type, applied in both steps before ranking and limit. Scope `none` matches no row. Account owner is `created_by`, account country is the contracting country.
+**Ranking:** full-text: exact title, title prefix, `ts_rank_cd` plus recent-activity boost, entity weight, `updated_at` desc. Trigram: `word_similarity` (threshold 0.3) desc, weight, `updated_at`. The trigram step runs only when full-text returns fewer than 5 items (`fallback=true`).
 
-**Normalisation:** `f_unaccent` and `f_search_norm` (trim, punctuation to space, lower case, unaccent) from migration 0004. Requires the `pg_trgm` and `unaccent` extensions.
+**Performance:** `tools/search-benchmark/bench.mjs` (`npm run bench:search`, optional `--explain`) runs 100 queries and reports p95. Seed volume ends with `REINDEX` and `ANALYZE` of `search_document`.
 
-**Operations:** after a bulk load, run `npm run seed -- --volume` or `REINDEX TABLE search_document; ANALYZE search_document;`. Benchmark: `npm run bench:search -- --explain` (needs `ZEPHYR_BENCH_COOKIE`).
-
-**Not yet:** OpenAPI entry for the route. Triggers for contact, lead, opportunity and project (added by their own stories).
+**Limitations:** the route is not in `docs/api/openapi.json` yet.
