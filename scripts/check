@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# Zephyr quality gate: the one script every PR passes, locally and in GitHub Actions (nothing is deployed).
+# Runs the eight steps below in this order, prints PASS/FAIL/SKIP per step and a summary, exits 1 if any step failed.
+# A step whose target does not exist yet prints "SKIP (not yet applicable ...)". It is never a silent PASS.
+# REQUIRE_ALL=1 (set in CI) turns a SKIP into a FAIL when the target exists but a tool is missing.
+# "needs Keycloak" SKIPs stay SKIPs: CI does not start Keycloak (locally: docker compose up -d keycloak).
+# Windows: scripts/check.ps1 (same steps, same order). Compose services started here are left running.
+set -u
+
+SPECTRAL_VERSION=6.15.0
+OPENAPI_FILE=docs/api/openapi.json
+OPENAPI_GENERATOR=tools/openapi-from-metadata/generate.mjs
+API_URL=http://127.0.0.1:18080
+STEPS=(lint tests seeds openapi-regenerate spectral oasdiff schemathesis vulnerabilities)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+RESULTS=()
+SKIP_KIND=""
+SKIP_NOTE=""
+
+# skip <na|tool|keycloak> <note>: a step calls this as its last command; it returns 2.
+skip() { SKIP_KIND=$1; SKIP_NOTE=$2; return 2; }
+
+env_get() { sed -n "s/^$1=//p" .env | head -n 1 | tr -d '\r'; }
+
+has_script() { (cd "$1" && node -e 'const s=JSON.parse(require("fs").readFileSync("package.json","utf8")).scripts||{};process.exit(s[process.argv[1]]?0:1)' "$2"); }
+
+install_deps() {
+  [ -d "$1/node_modules" ] && return 0
+  if [ -f "$1/package-lock.json" ]; then npm ci --prefix "$1"; else npm install --prefix "$1"; fi
+}
+
+# Sets ZEPHYR_TEST_DB (server of the integration tests; the test fixture creates its own database on it).
+# Locally the Compose db service is started and awaited; in CI (CI=true) the workflow's service container is used.
+ensure_test_db() {
+  [ -n "${ZEPHYR_TEST_DB:-}" ] && return 0
+  [ -f .env ] || node scripts/setup-env.mjs || return 1
+  if [ "${CI:-}" != true ]; then
+    docker compose up -d --wait db || { echo "Could not start the Compose db service. Start Docker, or set ZEPHYR_TEST_DB."; return 1; }
+  fi
+  local db
+  db=$(env_get ZEPHYR_DB | sed 's/Host=db;/Host=localhost;/')
+  [ -n "$db" ] || { echo "ZEPHYR_DB is missing in .env."; return 1; }
+  export ZEPHYR_TEST_DB=$db
+}
+
+# 1. Lint/type: dotnet build -warnaserror and dotnet format --verify-no-changes (npm run typecheck / lint), then the frontend's own scripts.
+step_lint() {
+  local rc=0 script
+  install_deps . || return 1
+  npm run typecheck --silent || rc=1
+  npm run lint --silent || rc=1
+  for script in lint typecheck; do
+    if has_script src/frontend "$script"; then
+      install_deps src/frontend && npm --prefix src/frontend run "$script" --silent || rc=1
+    else
+      echo "frontend: no '$script' script yet, nothing to run"
+    fi
+  done
+  return $rc
+}
+
+# 2. Tests: dotnet test (integration tests against the test database) and the Node tests.
+step_tests() {
+  install_deps . || return 1
+  ensure_test_db || return 1
+  npm test --silent
+}
+
+# 3. Seeds
+step_seeds() {
+  local python
+  python=$(command -v python3 || command -v python) || { skip tool "python is not installed"; return; }
+  "$python" scripts/validate_seeds.py
+}
+
+# 4. OpenAPI regenerate: the generator writes docs/api/openapi.json; any difference from the committed file fails.
+step_openapi_regenerate() {
+  [ -f "$OPENAPI_GENERATOR" ] || { skip na "not yet applicable: no generator at $OPENAPI_GENERATOR"; return; }
+  node "$OPENAPI_GENERATOR" "$OPENAPI_FILE" || return 1
+  if [ -n "$(git status --porcelain -- "$OPENAPI_FILE")" ]; then
+    echo "$OPENAPI_FILE differs from the committed copy. Commit the regenerated file."
+    git --no-pager diff --stat -- "$OPENAPI_FILE"
+    return 1
+  fi
+}
+
+# 5. Spectral (pinned version; rules in .spectral.yaml)
+step_spectral() {
+  [ -f "$OPENAPI_FILE" ] || { skip na "not yet applicable: no $OPENAPI_FILE"; return; }
+  npx --yes "@stoplight/spectral-cli@$SPECTRAL_VERSION" lint "$OPENAPI_FILE"
+}
+
+# 6. oasdiff: breaking changes against the copy of the file on main
+step_oasdiff() {
+  [ -f "$OPENAPI_FILE" ] || { skip na "not yet applicable: no $OPENAPI_FILE"; return; }
+  local base ref rc
+  base=$(mktemp)
+  for ref in origin/main main; do
+    git show "$ref:$OPENAPI_FILE" > "$base" 2>/dev/null && break
+    ref=""
+  done
+  if [ -z "$ref" ]; then rm -f "$base"; skip na "not yet applicable: main has no $OPENAPI_FILE"; return; fi
+  if ! command -v oasdiff > /dev/null; then rm -f "$base"; skip tool "oasdiff is not installed"; return; fi
+  oasdiff breaking "$base" "$OPENAPI_FILE" --fail-on ERR
+  rc=$?
+  rm -f "$base"
+  return $rc
+}
+
+# 7. Schemathesis against the local API (needs the database only). A schema with security schemes needs a token or Keycloak.
+step_schemathesis() {
+  [ -f "$OPENAPI_FILE" ] || { skip na "not yet applicable: no $OPENAPI_FILE"; return; }
+  if grep -q '"securitySchemes"' "$OPENAPI_FILE" && [ -z "${ZEPHYR_CHECK_TOKEN:-}" ]; then
+    skip keycloak "needs Keycloak"; return
+  fi
+  command -v schemathesis > /dev/null || { skip tool "schemathesis is not installed"; return; }
+  ensure_test_db || return 1
+  local pid rc=1 tries=0 headers=()
+  [ -n "${ZEPHYR_CHECK_TOKEN:-}" ] && headers=(-H "Authorization: Bearer $ZEPHYR_CHECK_TOKEN")
+  # A dedicated database, so fuzzing never touches the development data.
+  ZEPHYR_DB=$(printf '%s' "$ZEPHYR_TEST_DB" | sed 's/Database=[^;]*/Database=zephyr_check/') \
+    ASPNETCORE_URLS=$API_URL dotnet run --project src/backend/Zephyr.Api --no-launch-profile &
+  pid=$!
+  until curl -fsS "$API_URL/health" > /dev/null 2>&1; do
+    tries=$((tries + 1))
+    if [ $tries -gt 60 ] || ! kill -0 "$pid" 2> /dev/null; then echo "The API did not become healthy."; break; fi
+    sleep 2
+  done
+  if [ $tries -le 60 ] && kill -0 "$pid" 2> /dev/null; then
+    schemathesis run "$OPENAPI_FILE" --url "$API_URL" ${headers[@]+"${headers[@]}"}
+    rc=$?
+  fi
+  pkill -P "$pid" 2> /dev/null
+  kill "$pid" 2> /dev/null
+  return $rc
+}
+
+# 8. Vulnerabilities: NuGet (dotnet list exits 0 even when it finds some, so its output is checked) and npm
+step_vulnerabilities() {
+  local rc=0 out dir
+  out=$(dotnet list src/backend/Zephyr.Api.Tests package --vulnerable --include-transitive 2>&1) || rc=1
+  echo "$out"
+  if printf '%s' "$out" | grep -qi 'has the following vulnerable packages'; then rc=1; fi
+  for dir in . src/frontend; do
+    if [ -f "$dir/package-lock.json" ]; then
+      (cd "$dir" && npm audit --audit-level=high) || rc=1
+    else
+      echo "$dir: no package-lock.json yet, npm audit not run"
+    fi
+  done
+  return $rc
+}
+
+record() { RESULTS+=("$1|$2|$3"); echo "$1 $2${3:+ ($3)}"; }
+
+run_step() {
+  local name=$1 rc
+  SKIP_KIND=""
+  SKIP_NOTE=""
+  echo
+  echo "=== $name"
+  "step_${name//-/_}"
+  rc=$?
+  if [ $rc -eq 0 ]; then
+    record PASS "$name" ""
+  elif [ $rc -eq 2 ] && [ "$SKIP_KIND" = tool ] && [ "${REQUIRE_ALL:-}" = 1 ]; then
+    record FAIL "$name" "REQUIRE_ALL=1 and the step was skipped: $SKIP_NOTE"
+  elif [ $rc -eq 2 ]; then
+    record SKIP "$name" "$SKIP_NOTE"
+  else
+    record FAIL "$name" ""
+  fi
+}
+
+summary() {
+  local line status name note failed=0 skipped=0
+  echo
+  echo "=== Summary"
+  for line in "${RESULTS[@]}"; do
+    IFS='|' read -r status name note <<< "$line"
+    printf '%-5s %-20s %s\n' "$status" "$name" "$note"
+    [ "$status" = FAIL ] && failed=$((failed + 1))
+    [ "$status" = SKIP ] && skipped=$((skipped + 1))
+  done
+  echo
+  if [ $failed -gt 0 ]; then
+    echo "FAILED: $failed of ${#RESULTS[@]} steps failed ($skipped skipped)."
+    return 1
+  fi
+  echo "OK: no step failed ($skipped skipped)."
+}
+
+main() {
+  local step
+  cd "$ROOT" || return 1
+  if [ "${CI:-}" = true ]; then export ZEPHYR_REQUIRE_DB=1; fi
+  for step in "${STEPS[@]}"; do run_step "$step"; done
+  summary
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main
+  exit $?
+fi

@@ -2,7 +2,9 @@
 
 How Zephyr was built, feature by feature, so an outsider can rebuild it. Each `##` section covers one merged feature and has the six parts defined in `build/prompts/feature-section.md`. A feature's section is added in that feature's pull request and reviewed by a second developer. To rebuild the environment, start with the "Run Zephyr locally" section of `README.md`.
 
-## FT-108 — Local platform foundations (US-127, US-128, US-129, US-130)
+## F01 — Local stack, seeds and quality gate (FT-108)
+
+Stories: US-127, US-128, US-129, US-130.
 
 ### Goal
 One `docker compose up` gives a developer the whole system on a laptop at zero cost: database, API, web app, Keycloak sign-in with one test user per role, and a mail catcher. The database has a shared schema baseline and the reference data and demo accounts needed to use the system straight away.

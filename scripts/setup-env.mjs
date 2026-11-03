@@ -8,6 +8,8 @@ import { renderAll } from "./render-realms.mjs";
 
 const PLACEHOLDER = "change-me";
 const isSecretKey = (key) => /PASSWORD|SECRET/.test(key);
+// The Keycloak client secret in the realm templates and the API's provider secrets are one value.
+const isClientSecretKey = (key) => /^(OIDC_CLIENT_SECRET|ZEPHYR_AUTH__PROVIDERS__\d+__CLIENTSECRET)$/.test(key);
 
 export const randomPassword = () => randomBytes(18).toString("base64url");
 
@@ -15,6 +17,7 @@ export const randomPassword = () => randomBytes(18).toString("base64url");
 export function renderEnv(template, random = randomPassword) {
   const generated = [];
   let dbPassword = random();
+  const clientSecret = random();
   const lines = template.split(/\r?\n/).map((line) => {
     const match = /^([A-Za-z0-9_]+)=(.*)$/.exec(line);
     if (!match) return line;
@@ -25,6 +28,10 @@ export function renderEnv(template, random = randomPassword) {
     }
     if (key === "ZEPHYR_DB") {
       return `${key}=${value.replace(`Password=${PLACEHOLDER}`, `Password=${dbPassword}`)}`;
+    }
+    if (isClientSecretKey(key) && value === PLACEHOLDER) {
+      generated.push(key);
+      return `${key}=${clientSecret}`;
     }
     if (isSecretKey(key) && value === PLACEHOLDER) {
       generated.push(key);

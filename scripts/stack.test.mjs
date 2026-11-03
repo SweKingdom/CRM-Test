@@ -102,7 +102,8 @@ test("setup-env: generates random values and keeps the DB credential in sync", (
   const fakeValue = () => `fake-value-${++n}`;
   const { text, generated } = renderEnv(example, fakeValue);
   const vars = parseEnv(text);
-  assert.ok(!text.split(/\r?\n/).some((l) => isCredentialKey(l.split("=")[0]) && l.endsWith(`=${PLACEHOLDER}`)));
+  // Active variables only: the commented second-realm block (US-140) is left as a template.
+  assert.ok(!Object.entries(vars).some(([key, value]) => isCredentialKey(key) && value === PLACEHOLDER));
   assert.equal(vars.POSTGRES_PASSWORD, "fake-value-1");
   assert.ok(vars.ZEPHYR_DB.endsWith(passwordSuffix(vars.POSTGRES_PASSWORD)));
   assert.equal(vars.ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT, parseEnv(example).ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT);
