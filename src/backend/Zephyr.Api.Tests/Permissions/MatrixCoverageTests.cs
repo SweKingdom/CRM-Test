@@ -157,17 +157,17 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
 
     private sealed record Probe(string Method, string Pattern, string Url, string? Body = null);
 
-    private static readonly Probe AccountPut = new("PUT", "/api/v1/accounts/by-external-id/{system}/{value}", "/api/v1/accounts/by-external-id/dynamics/probe", "{}");
     private static readonly Probe AccountDelete = new("DELETE", "/api/v1/accounts/{id:guid}", $"/api/v1/accounts/{Missing}");
     private static readonly Probe UserPatch = new("PATCH", "/api/v1/users/{id}", $"/api/v1/users/{Missing}", """{"active":true}""");
     private static readonly Probe RatesGet = new("GET", "/api/v1/exchange-rates", "/api/v1/exchange-rates");
     private static readonly Probe RatesPut = new("PUT", "/api/v1/exchange-rates/{currency}/{month}", "/api/v1/exchange-rates/ZZZ/2026-11", """{"rateToSek":"x"}""");
 
-    /// <summary>The API probe of an (entity, action). The PUT routes create and update, so they serve both actions.</summary>
+    /// <summary>
+    /// The API probe of an (entity, action). The PUT routes create and update, so they serve both actions. The account create
+    /// and update cells have no probe: the normal POST and PATCH routes come with FT-113 (the by-external-id PUT is not one).
+    /// </summary>
     private static readonly Dictionary<(string Entity, string Action), Probe> Probes = new()
     {
-        [("account", "create")] = AccountPut,
-        [("account", "update")] = AccountPut,
         [("account", "delete")] = AccountDelete,
         [("app_user", "update")] = UserPatch,
         [("reference_data", "read")] = RatesGet,
@@ -176,7 +176,22 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
     };
 
     /// <summary>
-    /// Entities with no API route yet, so no probe (a deviation from "every entity has a probe", for product owner approval).
+    /// Routes that are not a cell of the matrix, so they are not compared with it: each has a reason. They still count as routes
+    /// (a new route without a probe or an entry here fails the route test) and an anonymous caller must get 401 on each.
+    /// </summary>
+    private static readonly (Probe Route, string Reason)[] OutsideMatrix =
+    [
+        (new Probe("PUT", "/api/v1/accounts/by-external-id/{system}/{value}", "/api/v1/accounts/by-external-id/dynamics/probe", "{}"), "integration route, see US-135"),
+        (new Probe("GET", "/api/v1/me/permissions", "/api/v1/me/permissions"), "any signed-in user, about the caller (US-144)"),
+        (new Probe("PUT", "/api/v1/projects/{id:guid}/approvers/{userId:guid}", $"/api/v1/projects/{Missing}/approvers/{Missing}"), "Admin by role until the project register, US-145"),
+        (new Probe("DELETE", "/api/v1/projects/{id:guid}/approvers/{userId:guid}", $"/api/v1/projects/{Missing}/approvers/{Missing}"), "Admin by role until the project register, US-145"),
+        (new Probe("POST", "/api/v1/delegations", "/api/v1/delegations", "{}"), "any role, scoped to the caller (US-145)"),
+        (new Probe("GET", "/api/v1/delegations", "/api/v1/delegations"), "any role, scoped to the caller (US-145)"),
+        (new Probe("DELETE", "/api/v1/delegations/{id:guid}", $"/api/v1/delegations/{Missing}"), "any role, scoped to the caller (US-145)")
+    ];
+
+    /// <summary>
+    /// Entities with no API route yet, so no probe (a deviation from "every entity has a probe", approved by the product owner).
     /// The route test fails when a route appears, so an entry cannot outlive the missing route: add a probe and delete the entry.
     /// </summary>
     private static readonly Dictionary<string, string> Pending = new()
@@ -199,21 +214,12 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
         ["dsar_request"] = "DSAR feature story (not built yet)"
     };
 
-    /// <summary>
-    /// Cells where a route that exists answers differently from the matrix. Product owner decision open: change the route or the matrix.
-    /// <see cref="Ac1_A_known_mismatch_still_differs_from_the_matrix"/> fails once a route agrees with the matrix, so the entry is removed.
-    /// </summary>
-    private static readonly Dictionary<(string Entity, string Action), string> KnownMismatch = new()
-    {
-        [("account", "create")] = "PUT by-external-id is for Admin and Integration only (design R7); the matrix gives Salesperson and BDR create on own and Admin none.",
-        [("account", "update")] = "PUT by-external-id is for Admin and Integration only (design R7); the matrix gives Salesperson update on own and Admin none.",
-        [("account", "delete")] = "DELETE is Admin only; the matrix gives nobody delete on account."
-    };
-
     public static IEnumerable<object[]> MatrixCases() =>
         PermissionSeeder.Parse(PermissionSeeder.EmbeddedCsv()).Select(r => new object[] { r.Role, r.Entity, r.Action, r.Scope });
 
     private static string[] Sorted(IEnumerable<string> values) => values.OrderBy(x => x, StringComparer.Ordinal).ToArray();
+
+    private static string Describe(Probe probe) => $"{probe.Method} {probe.Pattern}";
 
     /// <summary>The rule of AC 1: scope none is exactly 403; any other scope passes the permission check.</summary>
     private static bool Matches(string scope, int status) => scope == "none" ? status == 403 : status is not (401 or 403) and < 500;
@@ -241,16 +247,20 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
         Assert.Empty(probed.Intersect(Pending.Keys));
         Assert.Equal(Sorted(PermissionSeeder.Entities), Sorted(probed.Concat(Pending.Keys)));
         Assert.All(Probes.Keys, key => Assert.Contains(key.Action, PermissionSeeder.Actions));
-        Assert.All(KnownMismatch.Keys, key => Assert.True(Probes.ContainsKey(key), $"{key} is a known mismatch without a probe"));
+        Assert.All(OutsideMatrix, outside => Assert.False(string.IsNullOrWhiteSpace(outside.Reason), Describe(outside.Route)));
     }
 
     [DbFact]
-    public async Task Ac1_The_api_has_no_route_without_a_probe_and_no_probe_without_a_route()
+    public async Task Ac1_The_api_has_no_route_without_a_probe_or_a_reason_and_no_probe_without_a_route()
     {
         await world.EnsureAsync(fixture);
+        var probed = Probes.Values.Select(Describe).Distinct().ToArray();
+        var outside = OutsideMatrix.Select(o => Describe(o.Route)).ToArray();
 
-        // A new /api/v1 route fails here until its entity has a probe above (and is removed from Pending).
-        Assert.Equal(Sorted(Probes.Values.Select(p => $"{p.Method} {p.Pattern}").Distinct()), Sorted(world.Routes));
+        Assert.Empty(probed.Intersect(outside));
+        // A new /api/v1 route fails here until its entity has a probe above (and is removed from Pending), or it is listed
+        // in OutsideMatrix with the reason it is not a cell of the matrix.
+        Assert.Equal(Sorted(probed.Concat(outside)), Sorted(world.Routes));
     }
 
     [DbTheory]
@@ -260,7 +270,7 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
         await world.EnsureAsync(fixture);
 
         Assert.Equal(scope, world.Stored[(role, entity, action)]);
-        if (Probes.TryGetValue((entity, action), out var probe) && !KnownMismatch.ContainsKey((entity, action)))
+        if (Probes.TryGetValue((entity, action), out var probe))
         {
             var status = await world.StatusAsync(role, probe.Method, probe.Url, probe.Body);
 
@@ -269,30 +279,11 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
     }
 
     [DbFact]
-    public async Task Ac1_A_known_mismatch_still_differs_from_the_matrix()
+    public async Task Ac1_An_anonymous_caller_is_refused_on_every_route()
     {
         await world.EnsureAsync(fixture);
 
-        foreach (var ((entity, action), note) in KnownMismatch)
-        {
-            var probe = Probes[(entity, action)];
-            var differs = false;
-            foreach (var (role, _) in PermissionSeeder.Roles)
-            {
-                var status = await world.StatusAsync(role, probe.Method, probe.Url, probe.Body);
-                differs |= !Matches(world.Stored[(role, entity, action)], status);
-            }
-
-            Assert.True(differs, $"{entity} {action} now agrees with the matrix for every role: remove it from KnownMismatch ({note})");
-        }
-    }
-
-    [DbFact]
-    public async Task Ac1_An_anonymous_caller_is_refused_on_every_probed_route()
-    {
-        await world.EnsureAsync(fixture);
-
-        foreach (var probe in Probes.Values.Distinct())
+        foreach (var probe in Probes.Values.Concat(OutsideMatrix.Select(o => o.Route)).Distinct())
         {
             Assert.Equal(401, await world.StatusAsync(null, probe.Method, probe.Url, probe.Body));
         }

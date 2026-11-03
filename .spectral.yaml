@@ -1,1 +1,60 @@
 extends: ["spectral:oas"]
+
+rules:
+  # The shared conventions (Money, the If-Match parameter) are declared before the first endpoint that uses them.
+  oas3-unused-component: off
+
+  problem-json-errors:
+    description: "Error responses (4xx and 5xx) use only application/problem+json. /health is exempt: it answers a small status object."
+    severity: error
+    given: "$.paths[?(@property != '/health')][*].responses"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          patternProperties:
+            "^[45][0-9][0-9]$":
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: object
+                  required: ["application/problem+json"]
+                  additionalProperties: false
+
+  camel-case-properties:
+    description: Property names are camelCase.
+    severity: error
+    given: "$..properties[*]~"
+    then:
+      function: casing
+      functionOptions:
+        type: camel
+
+  operation-id-required:
+    description: Every operation has an operationId.
+    severity: error
+    given: "$.paths[*][get,put,post,patch,delete]"
+    then:
+      field: operationId
+      function: truthy
+
+  auth-errors-documented:
+    description: "Every operation that needs a session documents 401 and 403. Anonymous operations declare security as an empty list."
+    severity: error
+    given: "$.paths[*][get,put,post,patch,delete]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          anyOf:
+            - required: [security]
+              properties:
+                security:
+                  type: array
+                  maxItems: 0
+            - required: [responses]
+              properties:
+                responses:
+                  required: ["401", "403"]

@@ -22,6 +22,8 @@ public static class ErrorCodes
     public const string NotPatchable = "NOT_PATCHABLE";
     public const string LastAdmin = "LAST_ADMIN";
     public const string Forbidden = "FORBIDDEN";
+    public const string Unauthenticated = "UNAUTHENTICATED";
+    public const string NotFound = "NOT_FOUND";
     public const string MissingExchangeRate = "MISSING_EXCHANGE_RATE";
 }
 
@@ -63,6 +65,19 @@ public static class Problems
     public static ProblemException PreconditionFailed() =>
         new(StatusCodes.Status412PreconditionFailed, ErrorCodes.PreconditionFailed, "Precondition failed",
             "The resource was changed since you read it. Read it again and retry with the new ETag.");
+
+    /// <summary>401: nobody is signed in.</summary>
+    public static ProblemException Unauthenticated() =>
+        new(StatusCodes.Status401Unauthorized, ErrorCodes.Unauthenticated, "Unauthorized", "Sign in to continue.");
+
+    /// <summary>403: the caller is known but the action is not allowed for their roles or scope.</summary>
+    public static ProblemException Forbidden() =>
+        new(StatusCodes.Status403Forbidden, ErrorCodes.Forbidden, "Forbidden",
+            "Your role does not allow this action. Ask an administrator if you need access.");
+
+    /// <summary>404 for a record that does not exist or that the caller may not see (the two look the same on purpose).</summary>
+    public static ProblemException NotFound() =>
+        new(StatusCodes.Status404NotFound, ErrorCodes.NotFound, "Not found", "The record was not found, or you do not have access to it.");
 
     private sealed record Body(
         string Type, string Title, int Status, string Detail, string? Code, IReadOnlyList<FieldError>? Errors, string TraceId);

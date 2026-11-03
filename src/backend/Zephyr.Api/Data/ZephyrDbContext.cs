@@ -88,6 +88,9 @@ public class AppUser : IEntity
     public string? Subject { get; set; }
     public string? HomeCountry { get; set; }
 
+    /// <summary>The user's manager; users with the same manager, and the manager, are a team (column from migration 0004).</summary>
+    public Guid? ManagerId { get; set; }
+
     /// <summary>Salesperson, BDR, PM, Consultant, Finance, Management, Admin.</summary>
     public string[] Roles { get; set; } = [];
 
@@ -176,10 +179,12 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
 
         // The unique index on lower(email) (an expression index) is created by the migration only.
         // active and roles have no model default: EF must always send them, a default would swallow active = false.
+        // manager_id's foreign key, check and index come from migration 0004; the model only reads the column.
         modelBuilder.Entity<AppUser>(e =>
         {
             e.ToTable("app_user");
             e.Property(x => x.HomeCountry).HasColumnType("character(2)");
+            e.Property(x => x.ManagerId).HasColumnType("uuid");
             e.Property(x => x.Roles).HasColumnType("text[]");
             e.HasIndex(x => new { x.Issuer, x.Subject }).IsUnique().HasFilter("issuer is not null and subject is not null")
                 .HasDatabaseName("ux_app_user_issuer_subject");

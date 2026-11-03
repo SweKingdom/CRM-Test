@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
+using Zephyr.Api.Permissions;
 
 namespace Zephyr.Api.Auth;
 
@@ -16,7 +17,7 @@ public static class UsersEndpoints
     public static WebApplication MapUsersEndpoints(this WebApplication app)
     {
         app.MapPatch("/api/v1/users/{id}", PatchAsync)
-            .RequireAuthorization(policy => policy.RequireRole(AppUser.AdminRole))
+            .RequirePermission("app_user", "update")
             .WithWriteHooks();
         return app;
     }

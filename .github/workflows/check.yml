@@ -41,6 +41,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install oasdiff
+        # Pinned release (OpenAPI 3.1 needs 1.11 or newer). The gate compares docs/api/openapi.json with
+        # origin/main:docs/api/openapi.json; fetch-depth 0 above makes origin/main available.
+        env:
+          OASDIFF_VERSION: "1.11.7"
+        run: |
+          curl -fsSL "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz" | sudo tar -xz -C /usr/local/bin oasdiff
+          oasdiff --version
       - name: Create .env from .env.example
         run: cp .env.example .env
       - name: Quality gate

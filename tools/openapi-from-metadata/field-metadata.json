@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "Account": {
+      "tag": "Accounts",
+      "description": "A customer or prospect company.",
+      "fields": {
+        "id": { "type": "uuid", "description": "Identifier assigned by Zephyr." },
+        "name": { "type": "string", "writable": true, "required": true, "description": "Company name. Leading and trailing spaces are removed." },
+        "countryCode": { "type": "string", "nullable": true, "writable": true, "maxLength": 2, "pattern": "^[A-Z]{2}$", "description": "Country as two capital letters, for example SE. Leave it out or send null to clear it." },
+        "createdAt": { "type": "date-time", "description": "When the record was created." },
+        "updatedAt": { "type": "date-time", "description": "When the record was last changed." }
+      }
+    },
+    "CurrentUser": {
+      "description": "The signed-in user.",
+      "fields": {
+        "id": { "type": "uuid", "description": "Identifier of the user." },
+        "name": { "type": "string", "description": "Display name." },
+        "email": { "type": "string", "description": "Email address." },
+        "roles": { "type": "string[]", "description": "Role keys, for example Admin or Salesperson." },
+        "homeCountry": { "type": "string", "nullable": true, "maxLength": 2, "pattern": "^[A-Z]{2}$", "description": "Home country as two capital letters, or null." }
+      }
+    },
+    "ExchangeRate": {
+      "tag": "Exchange rates",
+      "description": "SEK per unit of a currency in one month. SEK itself has no rate: it is always 1.",
+      "fields": {
+        "id": { "type": "uuid", "description": "Identifier assigned by Zephyr." },
+        "currency": { "type": "string", "maxLength": 3, "pattern": "^[A-Z]{3}$", "description": "Currency code as three capital letters, for example USD." },
+        "month": { "type": "date", "description": "First day of the month the rate applies to." },
+        "rateToSek": { "type": "decimal", "writable": true, "required": true, "pattern": "^[0-9]+(\\.[0-9]{1,6})?$", "description": "SEK per unit of the currency, as text with at most 6 decimals, for example 10.50. A JSON number is accepted when writing. Responses always show 6 decimals." },
+        "updatedAt": { "type": "date-time", "description": "When the rate was last changed." }
+      }
+    }
+  },
+  "operations": [
+    {
+      "operationId": "upsertAccountByExternalId",
+      "kind": "write",
+      "entity": "Account",
+      "path": "/accounts/by-external-id/{system}/{value}",
+      "summary": "Create or update an account by external id",
+      "description": "Idempotent. Creates the account (201) when the external id is new, otherwise updates the account it maps to (200). Admin and Integration roles only. If-Match is ignored.",
+      "pathParams": {
+        "system": { "type": "string", "enum": ["dynamics", "fortnox"], "description": "The system that owns the id." },
+        "value": { "type": "string", "maxLength": 200, "description": "The id in that system." }
+      },
+      "extraResponses": [409]
+    },
+    {
+      "operationId": "deleteAccount",
+      "kind": "delete",
+      "entity": "Account",
+      "path": "/accounts/{id}",
+      "summary": "Delete an account",
+      "description": "Soft delete: the account no longer appears in reads. Admin only.",
+      "pathParams": {
+        "id": { "type": "uuid", "description": "Identifier of the account." }
+      }
+    },
+    {
+      "operationId": "listExchangeRates",
+      "kind": "list",
+      "entity": "ExchangeRate",
+      "path": "/exchange-rates",
+      "summary": "List exchange rates",
+      "description": "Rates of all currencies and months, most recently changed first by default.",
+      "filterFields": ["currency", "month", "updatedAt", "id"]
+    },
+    {
+      "operationId": "putExchangeRate",
+      "kind": "write",
+      "entity": "ExchangeRate",
+      "path": "/exchange-rates/{currency}/{month}",
+      "summary": "Set the exchange rate of a currency for a month",
+      "description": "Admin only. Creates the rate (201) or replaces the existing one (200).",
+      "pathParams": {
+        "currency": { "type": "string", "pattern": "^[A-Za-z]{3}$", "description": "Currency code, for example USD. SEK has no rate." },
+        "month": { "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$", "description": "Month as yyyy-MM, for example 2026-11." }
+      }
+    }
+  ]
+}

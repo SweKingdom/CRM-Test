@@ -106,14 +106,19 @@ test('US-146 AC 5: the real ui step fails with a clear message while src/fronten
   assert.match(run.stdout, /--ui was requested but src\/frontend\/e2e does not exist/);
 });
 
-test('PO answer #124: both scripts use the one API description path docs/api/openapi.json and the metadata generator', () => {
+test('US-136: every copy of the API description path is docs/api/openapi.json (PO answer #124 and #135) and the scripts use the metadata generator', () => {
   assert.match(read('scripts/check'), /^OPENAPI_FILE=docs\/api\/openapi\.json$/m);
   assert.match(read('scripts/check.ps1'), /^\$OpenApiFile = 'docs\/api\/openapi\.json'$/m);
+  assert.match(read('tools/openapi-from-metadata/generate.mjs'), /^const DEFAULT_OUT = resolve\(here, '\.\.', '\.\.', 'docs', 'api', 'openapi\.json'\);$/m);
+  assert.match(read('.gitattributes'), /^docs\/api\/openapi\.json text eol=lf$/m);
   for (const script of ['scripts/check', 'scripts/check.ps1']) {
     assert.match(read(script), /tools\/openapi-from-metadata\/generate\.mjs/);
-    assert.doesNotMatch(read(script), /(^|[^/])openapi\/openapi\.json/, script);
+    assert.doesNotMatch(read(script), /(^|[^/])openapi\/openapi\./, script);
   }
-  assert.doesNotMatch(read('README.md'), /(^|[^/])openapi\/openapi\.json/);
+
+  for (const file of ['scripts/check', 'scripts/check.ps1', 'README.md', '.gitattributes', '.github/workflows/check.yml', 'tools/openapi-from-metadata/generate.mjs', 'src/backend/Zephyr.Api.Tests/Common/OpenApiContractTests.cs']) {
+    assert.doesNotMatch(read(file), /openapi\.ya?ml|toYaml/, `${file} still names the YAML file or writer`);
+  }
 });
 
 test('AC 3: the workflow runs scripts/check on pull requests with read-only access and a Postgres service, and releases nothing', () => {
@@ -128,6 +133,13 @@ test('AC 3: the workflow runs scripts/check on pull requests with read-only acce
   assert.match(workflow, /REQUIRE_ALL: "1"/);
   assert.doesNotMatch(workflow, /deploy|login|push|secrets\.|docker compose/i);
   for (const [, action] of workflow.matchAll(/uses: (\S+)/g)) assert.match(action, /@v\d+$/, action);
+});
+
+test('US-136: the workflow installs a pinned oasdiff release before the gate runs', () => {
+  const workflow = read('.github/workflows/check.yml');
+  assert.match(workflow, /OASDIFF_VERSION: "\d+\.\d+\.\d+"/);
+  assert.match(workflow, /releases\/download\/v\$\{OASDIFF_VERSION\}\/oasdiff_\$\{OASDIFF_VERSION\}_linux_amd64\.tar\.gz/);
+  assert.ok(workflow.indexOf('Install oasdiff') < workflow.indexOf('run: bash scripts/check'));
 });
 
 test('AC 3: the Postgres service uses the values of .env.example, and the .NET version is the project one', () => {
