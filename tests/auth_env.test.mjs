@@ -28,3 +28,9 @@ test('US-140: setup-env gives the API provider secret the same value as the real
   // The commented second-realm block is left alone.
   assert.match(rendered, /^# ZEPHYR_AUTH__PROVIDERS__1__CLIENTSECRET=change-me$/m);
 });
+
+test('US-141: .env.example sets the session limits to 4 h idle, 12 h absolute and a 5 min status recheck', () => {
+  assert.equal(example.SESSION_IDLE_SECONDS, '14400');
+  assert.equal(example.SESSION_ABSOLUTE_SECONDS, '43200');
+  assert.equal(example.USER_STATUS_RECHECK_SECONDS, '300');
+});

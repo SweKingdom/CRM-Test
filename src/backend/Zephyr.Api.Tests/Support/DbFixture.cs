@@ -23,6 +23,18 @@ public sealed class DbFactAttribute : FactAttribute
     }
 }
 
+/// <summary>A <see cref="DbFactAttribute"/> for a theory: skipped without a PostgreSQL server, failing when ZEPHYR_REQUIRE_DB is set.</summary>
+public sealed class DbTheoryAttribute : TheoryAttribute
+{
+    public DbTheoryAttribute()
+    {
+        if (DbFixture.ServerConnectionString() is null && !DbFixture.DbRequired())
+        {
+            Skip = "No PostgreSQL server configured. Set ZEPHYR_TEST_DB (e.g. the Compose db service) to run this test.";
+        }
+    }
+}
+
 /// <summary>
 /// One throw-away database per test run: created, migrated once and dropped at the end; Respawn resets data between tests.
 /// The server comes from ZEPHYR_TEST_DB (falls back to ZEPHYR_DB); only the database name is replaced.

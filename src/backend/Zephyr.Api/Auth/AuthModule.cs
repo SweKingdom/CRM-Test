@@ -33,6 +33,7 @@ public sealed record BootstrapAdmin(string? Issuer, string? Subject);
 /// <summary>
 /// Sign-in (US-140): OpenID Connect code flow with PKCE per configured provider, a session cookie, user matching,
 /// the bootstrap admin, the CSRF check for cookie writes and the /auth/* endpoints. Zephyr stores no passwords.
+/// Session limits and the user-status recheck (US-141) are in <see cref="SessionRules"/>.
 /// </summary>
 public static class AuthModule
 {
@@ -53,11 +54,20 @@ public static class AuthModule
         ValidateProviders(providers);
         builder.Services.AddSingleton(new AuthProviders(providers));
 
+        var session = SessionSettings.From(builder.Configuration);
+        builder.Services.AddSingleton(session);
+        builder.Services.AddMemoryCache();
+        builder.Services.AddScoped<IUserStatus>(UserStatus.Create);
+        // Cookie lifetimes follow the injected clock (a fake one in tests).
+        builder.Services.AddOptions<CookieAuthenticationOptions>(CookieScheme)
+            .Configure<TimeProvider>((options, time) => options.TimeProvider = time);
+
         var authentication = builder.Services.AddAuthentication(CookieScheme).AddCookie(CookieScheme, options =>
         {
             options.Cookie = new SessionCookieBuilder { Name = "zephyr.session", HttpOnly = true, SameSite = SameSiteMode.Lax, IsEssential = true };
-            options.ExpireTimeSpan = TimeSpan.FromHours(8);
+            options.ExpireTimeSpan = session.Idle;
             options.SlidingExpiration = true;
+            options.Events.OnValidatePrincipal = SessionRules.ValidateAsync;
             // An API answers 401/403, it does not redirect to a login page.
             options.Events.OnRedirectToLogin = context =>
             {
@@ -183,9 +193,9 @@ public static class AuthModule
             var configuration = services.GetRequiredService<IConfiguration>();
             var bootstrap = new BootstrapAdmin(configuration["ZEPHYR_BOOTSTRAP_ADMIN_ISSUER"], configuration["ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT"]);
             var log = services.GetRequiredService<ILoggerFactory>().CreateLogger("Zephyr.Api.Auth.UserMatching");
+            var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
             var user = await UserMatching.MatchAsync(
-                services.GetRequiredService<ZephyrDbContext>(), provider, bootstrap, context.Principal!,
-                services.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime, log);
+                services.GetRequiredService<ZephyrDbContext>(), provider, bootstrap, context.Principal!, now.UtcDateTime, log);
             if (user is null)
             {
                 context.Fail(RefusedMarker);
@@ -193,6 +203,9 @@ public static class AuthModule
             }
 
             context.Principal = UserMatching.ToPrincipal(user);
+            // The absolute session limit counts from here (US-141).
+            context.Properties ??= new AuthenticationProperties();
+            SessionRules.Stamp(context.Properties, now);
         };
         options.Events.OnRemoteFailure = context =>
         {
