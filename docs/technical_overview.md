@@ -262,3 +262,52 @@ Integrations write idempotently through `PUT /api/v1/{plural}/by-external-id/{sy
 - **Schema:** no migration. Tables `account` (0002) and `external_id` (0001) already exist.
 - **Adding an entity:** one `EntityBinding<T>` in `EntityRegistry` plus two map calls in `Program.cs`.
 - **Account body:** `name` required; `countryCode` optional, two capital letters; PUT replaces the record, so an absent `countryCode` clears it.
+
+## Personal API tokens (US-142)
+
+**Scope:** personal API tokens let scripts and AI assistants act as a user. Full detail: `docs/api-tokens.md` and the task document for US-142.
+
+**Format and storage**
+- Token: `zph_` + 43 base64url characters (32 random bytes). Shown once at creation.
+- Table `api_token`: `id`, `user_id` (FK to `app_user`), `name`, `prefix`, `token_hash` (SHA-256 hex, 64 chars), `hash_algorithm` (text, not null, default `sha256`), `expires_at`, `revoked_at`, `last_used_at`. The plaintext is never stored.
+- Migration `0004_ApiToken` creates the table; the down migration drops it.
+- The current algorithm is `ApiTokens.HashAlgorithm`. A row is accepted only when its `hash_algorithm` equals it. Comparison is by `CryptographicOperations.FixedTimeEquals` after an indexed lookup on `token_hash`.
+
+**Endpoints**
+
+| Method and route | Input | Success | Errors |
+|---|---|---|---|
+| `POST /api/v1/me/tokens` | `name` (required, non-blank, bounded length), `expiresInDays` (optional integer, 1–365, default 90) | 201 with `token` (plaintext), `prefix`, `expiresAt`; `Cache-Control: no-store` | 422 `VALIDATION`; 422 `OUT_OF_RANGE` (field `expiresInDays`); 422 `TOKEN_LIMIT` (11th active token); 403 when called with a token instead of a session cookie |
+| `GET /api/v1/me/tokens` | — | 200 list with `id`, `name`, `prefix`, `expiresAt`, `revokedAt`, `lastUsedAt`; never `token` | 401 |
+| `DELETE /api/v1/me/tokens/{id}` | — | 204 | 404 for unknown or foreign id; 401 |
+
+**Authentication**
+- Default scheme `Zephyr` (policy scheme in `AuthModule.cs`): `Authorization: Bearer zph_…` goes to scheme `ApiToken` (`ApiTokenHandler`); everything else goes to the session cookie. Sign-in and sign-out stay on the cookie.
+- Each bearer request is looked up in the database, so revocation takes effect immediately. Refused (401 with `WWW-Authenticate: Bearer`) when: expired, revoked, algorithm not current, owner deactivated or deleted.
+- Principal is built with `UserMatching.ToPrincipal(user, scheme)`; the token carries the owner's permissions.
+- `last_used_at` is updated with a direct UPDATE at most once per minute and does not change `updated_at`.
+
+**Concurrency and audit**
+- Creation takes a PostgreSQL advisory transaction lock keyed per user, so concurrent creates cannot exceed 10 active tokens.
+- Create and revoke write `audit_log` rows: `api_token_created`, `api_token_revoked`, containing the prefix only. `audit_log` is in Respawn `TablesToIgnore`.
+
+**Testing**
+- `ApiTokenTests.cs` covers AC 1–5 and a Respawn regression test (`api_token` cleared together with `app_user`). DB-backed tests require `ZEPHYR_TEST_DB`; CI sets `ZEPHYR_REQUIRE_DB=1`.
+
+**Operations**
+- Post-deploy manual step: add the GitHub custom secret-scanning pattern `zph_[A-Za-z0-9_-]{43}` (see `docs/api-tokens.md`).
+- Changing the hash algorithm is not transparent: rows with another `hash_algorithm` are refused. A dual-algorithm lookup is needed before such a change.
+
+## Permission model (US-143)
+
+- **Source of truth:** `src/backend/Zephyr.Api/Permissions/permission-matrix.csv` (embedded resource, 665 rows = 7 roles × 19 entities × 5 actions). Columns: role, entity, action, scope.
+- **Scopes:** `none`, `own`, `team`, `country`, `org`. `country` means the contracting country (`app_user.home_country`). There is no business-unit scope.
+- **Tables:**
+  - `role(key text PK, label text not null)`: 7 rows, keys in title case (Salesperson, BDR, PM, Consultant, Finance, Management, Admin).
+  - `role_permission(role_key FK role, entity, action in read|create|update|delete|approve, scope in none|own|team|country|org)`, PK (role_key, entity, action). All 665 rows are stored; an absent row also means `none`.
+  - `app_user.manager_id uuid null` FK `app_user(id)`, check `manager_id <> id`, partial index.
+- **Migration:** `0004_RolesPermissions`. `Down` drops both tables and the column.
+- **Seeding:** `PermissionSeeder.SeedAsync` validates the CSV first (unknown role, entity, action or scope; wrong header or column count; duplicate row). It then upserts in one transaction, skips unchanged rows, and deletes rows and roles no longer in the CSV. It runs at API start after `Migrate()` and in `import` mode. An invalid CSV stops the API.
+- **Not built yet:** the enforcement engine (scope predicates, `RequirePermission`).
+- **Docs:** `docs/permissions.md` (model, team, project-scoped access, matrix).
+- **Tests:** `MatrixTests` (`Ac1_*` to `Ac5_*`, Respawn reset regression). DB tests need `ZEPHYR_TEST_DB`.
