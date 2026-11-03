@@ -172,3 +172,41 @@ No password or secret column exists. Users are pre-provisioned; there is no self
 | ZEPHYR_BOOTSTRAP_ADMIN_ISSUER / ZEPHYR_BOOTSTRAP_ADMIN_SUBJECT | Optional. Used only while no active admin exists. |
 
 Secrets live only in the gitignored `.env`. Provider 1 `CLIENTSECRET` must equal `OIDC_CLIENT_SECRET`.
+
+## Quality gate (US-132)
+
+The quality gate is one script, `scripts/check` (Bash) with `scripts/check.ps1` (Windows) as its equivalent. Developers run it locally; GitHub Actions runs `bash scripts/check` on every pull request. Nothing is deployed.
+
+| # | Step | Command | Missing target |
+|---|---|---|---|
+| 1 | lint | `dotnet build -warnaserror`, `dotnet format --verify-no-changes`, frontend `npm run lint && npm run typecheck` | — |
+| 2 | tests | `dotnet test` against the test database | — |
+| 3 | seeds | `python3 scripts/validate_seeds.py` | — |
+| 4 | openapi-regenerate | `node tools/openapi-from-metadata/generate.mjs docs/api/openapi.json`; fails if git diff | SKIP (not yet applicable) |
+| 5 | spectral | `npx --yes @stoplight/spectral-cli@6.15.0` on `docs/api/openapi.json` (`.spectral.yaml` extends `spectral:oas`) | SKIP (not yet applicable) |
+| 6 | oasdiff | `oasdiff breaking` against the copy on `origin/main` (or `main`) | SKIP (not yet applicable) |
+| 7 | schemathesis | Schemathesis 4 against the local API | SKIP (not yet applicable) |
+| 8 | vulnerabilities | `dotnet list package --vulnerable --include-transitive`; `npm audit --audit-level=high` | — |
+
+**Behaviour**
+- Each step prints `PASS`, `FAIL` or `SKIP` and a `=== Summary` table. All steps run even after a failure. Exit code 1 if any step fails.
+- A missing target is a SKIP, never a silent PASS. With `REQUIRE_ALL=1` (set in CI), a SKIP for a built feature fails the run.
+- Steps needing Keycloak print `SKIP (needs Keycloak)` in CI. Run them locally with `docker compose up -d keycloak`.
+- Locally the script starts the Compose `db` service and waits for it to be healthy, and leaves services running. In CI (`CI=true`) it does not call Compose for `db`.
+
+**Database for tests**
+- Tests read `ZEPHYR_TEST_DB` only, in Npgsql key=value form. `DATABASE_URL` is not read.
+- Each run uses its own database with Respawn for isolation.
+
+**CI workflow** (`.github/workflows/check.yml`)
+- Trigger: `on: pull_request` only. No `pull_request_target`.
+- Permissions: `contents: read`. No secrets, no login, no push.
+- Runner: ubuntu-latest, with .NET, Node and Python set up.
+- Service: Postgres 16 as a `services:` container, health-checked on port 5432. Credentials come from the `.env.example` values.
+- Before the check, the workflow copies `.env.example` to `.env`.
+
+**Pinned tools**
+- Spectral: `@stoplight/spectral-cli@6.15.0`, held in one constant in the scripts. A test checks the pin. Not yet an exact devDependency (see PO answer #123).
+- Later steps (oasdiff, Schemathesis 4) must be installed in the workflow when their steps become active (US-136).
+
+**Tests:** `tests/check.test.mjs` runs with `npm test`. The bash-driven tests are skipped on native Windows.
