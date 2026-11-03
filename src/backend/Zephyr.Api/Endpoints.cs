@@ -4,6 +4,7 @@ using Zephyr.Api.Auth;
 using Zephyr.Api.Common;
 using Zephyr.Api.Finance;
 using Zephyr.Api.Permissions;
+using Zephyr.Api.Search;
 
 namespace Zephyr.Api;
 
@@ -28,6 +29,9 @@ public static class Endpoints
         }).AllowAnonymous();
 
         app.MapExchangeRates();
+
+        // Global search (US-147).
+        app.MapSearch();
 
         // By-external-id upsert and soft delete (US-135) for every entity in the registry.
         app.MapExternalUpsert(EntityRegistry.Accounts);

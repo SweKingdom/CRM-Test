@@ -385,3 +385,21 @@ Backend tests in `Zephyr.Api.Tests/Permissions/MatrixCoverageTests.cs` check the
 - **Gate:** the tests run in step `tests` of `scripts/check`. `scripts/check --ui` (`-Ui`) adds step `ui`, which fails until `src/frontend/e2e` exists.
 - **CI:** set `ZEPHYR_REQUIRE_DB=1` so the database tests cannot be skipped.
 - **Not yet built:** Playwright UI routes, time privacy, search leak tests (follow-up stories).
+
+## Search (US-147)
+
+**Migration:** `0004_SearchDocument` creates `f_unaccent`, `f_search_norm`, table `search_document` (GIN indexes `ix_search_document_tsv` and `ix_search_document_text_trgm`), `search_upsert`, and helper `search_install_trigger(table, type, title_expr, text_expr, [subtitle, owner_id, account_id, country_code, business_unit, hidden])`. Only the account trigger exists; each later entity story adds one helper call in its own migration with `p_hidden` (for contact and lead: `new.anonymised_at is not null`) and its trigger test.
+
+**Sync:** triggers run in the same transaction as the change (insert, update, delete). Soft-deleted rows (`deleted_at`) are removed from the index; restoring them re-adds them.
+
+**Normalisation:** `f_search_norm` = trim(punctuation→space(lower(f_unaccent(x)))), used for stored text, titles and queries.
+
+**API:** `GET /api/v1/search?q=&types=&limit=`. `q` 2–100 characters, `limit` 1–50 (default 20), `types` CSV of account, contact, lead, opportunity, project. Response `{items:[{type,id,title,snippet,score}], fallback}`. Errors: 400 problem+json (bad parameters, repeated or unknown parameters), 401 without session, 403 without a matrix role that may read a searchable type.
+
+**Read scope:** per type, `IPermissionService.Scope(user, type, "read")` gives the scope arrays `@org`, `@own`, `@team`, `@country`, applied as a WHERE filter before ranking. Account owner is `created_by`; account country is the contracting country. The route is declared with `RequireRoles` for all matrix roles. Integration clients get 403.
+
+**Ranking:** full-text: exact title, title prefix, `ts_rank_cd` plus recent-activity boost, entity weight, `updated_at` desc. Trigram: `word_similarity` (threshold 0.3) desc, weight, `updated_at`. The trigram step runs only when full-text returns fewer than 5 items (`fallback=true`).
+
+**Performance:** `tools/search-benchmark/bench.mjs` (`npm run bench:search`, optional `--explain`) runs 100 queries and reports p95. Seed volume ends with `REINDEX` and `ANALYZE` of `search_document`.
+
+**Limitations:** the route is not in `docs/api/openapi.json` yet.

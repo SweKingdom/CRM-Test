@@ -2,7 +2,8 @@
 // Usage: node scripts/seed.mjs [--dir <seed_dir>]
 //        node scripts/seed.mjs --volume [--seed N] [--anchor YYYY-MM-DD] [--reset]
 // --volume loads the deterministic volume seed (US-131) from tools/search-benchmark/generate instead:
-// one file per entity, skipped with a notice while its table does not exist yet.
+// one file per entity, skipped with a notice while its table does not exist yet. It ends with ANALYZE of the loaded
+// tables and, once the search index exists (US-147), REINDEX + ANALYZE of search_document.
 import { existsSync, readFileSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -126,6 +127,15 @@ async function loadVolume(client, { seed, anchor, reset }) {
     console.log(`seed: loaded ${result.rowCount} ${entity} rows`);
   }
   for (const { table } of entities) await client.query(`ANALYZE ${table}`);
+
+  // The search triggers (US-147) index every row as it is inserted; a bulk load leaves the GIN indexes bloated and the
+  // statistics stale, so rebuild and analyse them for the benchmark.
+  const { rows } = await client.query("select to_regclass('public.search_document') is not null as present");
+  if (rows[0].present) {
+    await client.query('REINDEX TABLE search_document');
+    await client.query('ANALYZE search_document');
+    console.log('seed: reindexed and analysed search_document');
+  }
 }
 
 const volume = args.includes('--volume');

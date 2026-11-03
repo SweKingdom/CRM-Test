@@ -9,7 +9,8 @@
   "scripts": {
     "setup-env": "node scripts/setup-env.mjs",
     "seed": "node scripts/seed.mjs",
-    "typecheck": "dotnet build src/backend/Zephyr.Api.Tests --no-incremental -warnaserror && node --check scripts/setup-env.mjs && node --check scripts/stack.test.mjs && node --check scripts/render-realms.mjs && node --check scripts/lint.mjs && node --check scripts/seed.mjs && node --check tools/openapi-from-metadata/generate.mjs",
+    "bench:search": "node tools/search-benchmark/bench.mjs",
+    "typecheck": "dotnet build src/backend/Zephyr.Api.Tests --no-incremental -warnaserror && node --check scripts/setup-env.mjs && node --check scripts/stack.test.mjs && node --check scripts/render-realms.mjs && node --check scripts/lint.mjs && node --check scripts/seed.mjs && node --check tools/search-benchmark/bench.mjs && node --check tools/openapi-from-metadata/generate.mjs",
     "lint": "dotnet format whitespace src/backend/Zephyr.Api --verify-no-changes && dotnet format whitespace src/backend/Zephyr.Api.Tests --verify-no-changes && node scripts/lint.mjs && node --check tests/seeds.test.mjs && node --check tests/check.test.mjs && node --check tests/volume.test.mjs && node --check tests/openapi.test.mjs",
     "test": "dotnet test src/backend/Zephyr.Api.Tests && node --test \"tests/**/*.test.mjs\" scripts/stack.test.mjs",
     "build": "dotnet build src/backend/Zephyr.Api -c Release -warnaserror && node --check scripts/render-realms.mjs",

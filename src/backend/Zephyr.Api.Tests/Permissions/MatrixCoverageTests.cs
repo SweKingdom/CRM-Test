@@ -183,6 +183,7 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
     [
         (new Probe("PUT", "/api/v1/accounts/by-external-id/{system}/{value}", "/api/v1/accounts/by-external-id/dynamics/probe", "{}"), "integration route, see US-135"),
         (new Probe("GET", "/api/v1/me/permissions", "/api/v1/me/permissions"), "any signed-in user, about the caller (US-144)"),
+        (new Probe("GET", "/api/v1/search", "/api/v1/search?q=probe"), "any role, scoped per entity type by the read cells of the matrix (US-147)"),
         (new Probe("PUT", "/api/v1/projects/{id:guid}/approvers/{userId:guid}", $"/api/v1/projects/{Missing}/approvers/{Missing}"), "Admin by role until the project register, US-145"),
         (new Probe("DELETE", "/api/v1/projects/{id:guid}/approvers/{userId:guid}", $"/api/v1/projects/{Missing}/approvers/{Missing}"), "Admin by role until the project register, US-145"),
         (new Probe("POST", "/api/v1/delegations", "/api/v1/delegations", "{}"), "any role, scoped to the caller (US-145)"),
