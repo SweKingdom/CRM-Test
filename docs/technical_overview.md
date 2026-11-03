@@ -210,3 +210,12 @@ The quality gate is one script, `scripts/check` (Bash) with `scripts/check.ps1` 
 - Later steps (oasdiff, Schemathesis 4) must be installed in the workflow when their steps become active (US-136).
 
 **Tests:** `tests/check.test.mjs` runs with `npm test`. The bash-driven tests are skipped on native Windows.
+
+## Documentation and decision records (US-137)
+
+- `README.md` section "Run Zephyr locally": ordered commands from clone to signed-in seeded system, with URLs, seeded test user name and stop/reset. No secrets; `.env.example` holds placeholders only.
+- `BUILD.md`: build log, one `## F{nn} — {title} (FT-code)` section per merged feature. Each section has the six parts of `build/prompts/feature-section.md` and a `Reviewed by:` line (second developer).
+- `build/prompts/feature-section.md`: single source for the six part names.
+- `docs/adr/`: ADR-013 (local edition) is Proposed. It defers ADR-001 and ADR-002 without replacing them. `docs/adr/README.md` is the approval index for ADR-004, 006, 007, 008, 009, 012 and 013. Status changes to Accepted only in the approving PR, with approver and approval PR recorded.
+- `.github/pull_request_template.md`: checklist line for the BUILD.md section and second-developer review.
+- `tests/docs.test.mjs`: checks the README order, BUILD.md headings and ADR index.
