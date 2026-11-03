@@ -129,6 +129,21 @@ Useful while it runs:
 docker compose logs api   # JSON log lines on stdout
 ```
 
+## Synthetic volume seed
+
+Dynamics-scale test data for performance measurements: about 56,000 searchable records (6,000 accounts, 18,000 contacts, 12,000 leads, 9,000 opportunities, 11,000 projects) and about 105,000 time entries, 18,495 of them in the 12 months up to the anchor date. All of it is synthetic and every row has `custom->>'synthetic' = 'true'`. About 2% of the names are typo variants (the correct spelling is in `custom->>'typo_of'`), and names include åäöéü, Malmö, Göteborg and Västerås.
+
+```sh
+npm run seed -- --volume                     # load (needs DATABASE_URL, see .env.example; the stack must be migrated)
+npm run seed -- --volume --reset             # remove the synthetic rows first, then load again
+npm run seed -- --volume --seed 7 --anchor 2026-12-11
+```
+
+- Entities whose table does not exist yet print `SKIP <entity>: table missing`; the rest are loaded. Run the seed again once more tables exist.
+- Running again without `--reset` refuses. `--reset` only deletes rows with the synthetic marker.
+- The same `--seed` (default 42) and `--anchor` (default: today in Europe/Stockholm) always give the same ids and names.
+- Targets are in `tools/search-benchmark/generate/targets.json`; one SQL file per entity next to it; name lists in `tools/search-benchmark/data/`.
+
 ## Quality gate
 
 Run the quality gate before you open a PR. GitHub Actions runs the same script on every pull request and deploys nothing.

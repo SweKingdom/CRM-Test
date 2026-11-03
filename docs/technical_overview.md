@@ -74,32 +74,20 @@ Keycloak stands in for Entra locally. It runs in dev mode on localhost only.
 
 ## Reference data and seeds (US-130)
 
-**Migration `0002_ReferenceData`** (raw SQL, no model snapshot change) creates the reference tables. Every reference table has `key text unique`, `label text`, `sort_order int`, `active bool default true`.
+Reference data and seeds (US-130)
 
-| Table | Extra columns |
-|---|---|
-| stage | `is_terminal`, `exit_criteria jsonb null` |
-| close_outcome | `maps_to_stage` (Won, Lost, NoDecision, Disqualified) |
-| close_reason | `outcome_key` FK to close_outcome.key |
-| call_outcome | `counts_as_contact` |
-| time_type | `billable_default`, `requires_project`, `allows_future`, `category` (client, internal, absence) |
-| country | `iso2 char(2) unique` (key = iso2) |
-| currency | `iso3 char(3) unique`, `decimals int default 2` |
-| meddpicc_element | none |
-| account (minimal) | `name`, `country_code char(2) null`; unique index on `lower(name)` |
+Volume seed (US-131)
 
-**Seed files** (applied in filename order by `scripts/seed.mjs`, one transaction per file):
-- `Seed/0001_reference_data.sql`: reference rows, `ON CONFLICT (key) DO UPDATE`. Changes reach existing databases without a reset.
-- `Seed/0002_demo_accounts.sql`: three demo accounts with fixed UUIDs, `ON CONFLICT (id) DO NOTHING`.
-- No seed-tracking table is used.
-
-**Command:** `npm run seed` (`node scripts/seed.mjs`). Connection from `DATABASE_URL` or `.env`. Dependencies: `pg`, `dotenv`.
-
-**Validation:** `python3 scripts/validate_seeds.py [dir]` (stdlib only). Checks: sequential `NNNN_*.sql` names, no DELETE/DROP/TRUNCATE, ON CONFLICT on every INSERT, DO UPDATE for reference files and DO NOTHING for demo files, row counts per set (9/11/6/6/7/8), no email or phone outside `example.com`. Exit 1 prints `file:line reason`.
-
-**Tests:** `SeedTests.cs` (AC 1–4) needs `ZEPHYR_TEST_DB`; CI sets `ZEPHYR_REQUIRE_DB=1`. `tests/seeds.test.mjs` covers AC 5 using `tests/seeds_broken/`.
-
-**Not in this story:** exchange rates (US-134), volume seed set (US-131).
+- Entry point: `npm run seed -- --volume [--seed N] [--anchor YYYY-MM-DD] [--reset]` (`scripts/seed.mjs`).
+- SQL generators: `tools/search-benchmark/generate/01_account.sql` to `06_time_entry.sql`, with shared pg_temp helpers in `_helpers.sql`. Parameters arrive as transaction settings: `zephyr.seed`, `zephyr.anchor`, `zephyr.data`, `zephyr.targets`.
+- Targets: `generate/targets.json` (56,000 searchable records; 105,000 time entries; 18,495 in the trailing 12 months).
+- Input lists: `tools/search-benchmark/data/` (`names.json`, `cities.json`, `typos.json`, `time_types.json`).
+- Determinism: each value is `md5(seed || entity || n)`. No `setseed`/`random()`.
+- Loader behaviour: one transaction per entity; missing tables are skipped with a warning; ANALYZE after load; a second run without `--reset` is refused; `--reset` deletes only rows where `custom->>'synthetic' = 'true'`.
+- Marker: every generated row has `custom->>'synthetic' = 'true'`. Typo rows store the original spelling in `custom->>'typo_of'`.
+- Time entries: first 18,495 spread over [anchor − 12 months, anchor]; the remainder over the 1,460 days before that window. Columns filled: `project_id`, `work_date`, `duration_minutes`, `notes`, `user_id`, `time_type`.
+- Assumed schema (owned by later stories or US-150): `time_entry.time_type` holds `time_type.key`; `time_entry.user_id` is a plain uuid with no foreign key.
+- Tests: `tests/volume.test.mjs` (targets, file layout, columns, keys, option validation); `VolumeSeedTests.cs` (DB-backed AC 1 to AC 3; checksum per table, extended as tables are created). DB tests need `ZEPHYR_TEST_DB` and run in CI with `ZEPHYR_REQUIRE_DB=1`.
 
 ## API conventions (US-133)
 

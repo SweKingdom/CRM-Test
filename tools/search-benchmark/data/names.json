@@ -1,0 +1,31 @@
+{
+  "given": [
+    "Anders", "Åsa", "Björn", "Carin", "Daniel", "Elin", "Fredrik", "Gunilla", "Håkan", "Ingrid",
+    "Johan", "Kristina", "Lars", "Märta", "Nils", "Ödön", "Per", "Rebecka", "Sofia", "Tobias",
+    "Ulrika", "Viktor", "Wilma", "Yngve", "Zoë", "René", "Jürgen", "Chiara", "Matteo", "Søren"
+  ],
+  "family": [
+    "Andersson", "Åkesson", "Bergström", "Björk", "Carlsson", "Dahlberg", "Eriksson", "Forsberg",
+    "Göransson", "Hägg", "Isaksson", "Johansson", "Karlsson", "Lindholm", "Lindén", "Magnusson",
+    "Nyström", "Öberg", "Östlund", "Persson", "Qvist", "Rönnqvist", "Svensson", "Sjöberg",
+    "Törnqvist", "Ulvås", "Vikström", "Wallin", "Ekdal", "Bellini", "Müller", "Schröder",
+    "Jørgensen", "Mäkinen", "Lefèvre", "Müntzing", "Strömberg", "Holmgren", "Nordén", "Åberg"
+  ],
+  "sectors": [
+    "Logistik", "Konsult", "Energi", "Bygg", "Data", "Mjukvara", "Transport", "Fastigheter",
+    "Industri", "Livsmedel", "Finans", "Hälsa", "Skog", "Telecom", "Retail", "Marin",
+    "Försäkring", "Utbildning", "Media", "Design"
+  ],
+  "legal": ["AB", "AB", "AB", "Oy", "A/S", "AS", "GmbH", "Srl"],
+  "services": [
+    "Data platform migration", "CRM integration", "Cloud assessment", "Security review",
+    "Finance reporting", "Website relaunch", "Process automation", "Analytics pilot",
+    "Support agreement", "Architecture workshop", "Test automation", "Mobile app",
+    "Licence renewal", "Förstudie", "Systemförvaltning", "Integrationsprojekt"
+  ],
+  "notes": [
+    "Workshop preparation", "Sprint planning", "Kundmöte Göteborg", "Design review",
+    "Code review", "Förberedelse inför demo", "Status meeting", "Requirements analysis",
+    "Testing and bug fixing", "Documentation", "Överlämning", "Steering committee"
+  ]
+}

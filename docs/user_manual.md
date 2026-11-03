@@ -21,13 +21,16 @@ Tip: if you only need to sign in again, skip to the sign-in step. Your data stay
 
 ## Loading reference data and demo companies
 
-Reference data (call outcomes, time types, countries, currencies, sales stages, MEDDPICC elements) and three fake demo companies are loaded with one command.
+Loading reference data and demo companies
 
-1. Make sure the database is running and `DATABASE_URL` is set (environment or `.env` file).
-2. Run `npm run seed` from the project root.
-3. Check the result. The three demo companies **Lindholm Demo AB**, **Ekdal Demo AB** and **Bellini Demo Srl** appear in the account list.
+Use this to fill a local database with realistic test data.
 
-Tips:
-- It is safe to run the seed again. Existing reference rows are updated, not duplicated.
-- Demo companies you have renamed are never overwritten by the seed.
-- Exchange rates are not loaded by the seed. Amounts in a currency other than SEK show "missing rate" until exchange rates are delivered.
+1. Open a terminal in the project folder.
+2. To load the reference data and demo companies, run `npm run seed`.
+3. To load the larger test volume (about 56,000 searchable records and about 105,000 time entries), run `npm run seed -- --volume`.
+4. If a table is not yet available in your database, the loader prints `SKIP <entity>: table missing` for it and loads the rest.
+5. To run the volume load again, add `--reset`. This removes only the generated test records and keeps any records you created by hand.
+
+Tip: Generated records are marked as synthetic. Do not use them as real customer data.
+
+Warning: Without `--reset`, a second volume load stops with an error that names `--reset`. Nothing is changed in that case.

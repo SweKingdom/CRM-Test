@@ -1,0 +1,17 @@
+{
+  "seed": 42,
+  "window": "time_entry.work_date in [anchor - 12 months, anchor] for exactly trailing_12_months entries; anchor = today in Europe/Stockholm unless --anchor is given; the other entries fall in the four years before the window",
+  "entities": {
+    "account": { "table": "account", "count": 6000 },
+    "contact": { "table": "contact", "count": 18000 },
+    "lead": { "table": "lead", "count": 12000 },
+    "opportunity": { "table": "opportunity", "count": 9000 },
+    "project": { "table": "project", "count": 11000 },
+    "time_entry": { "table": "time_entry", "count": 105000, "trailing_12_months": 18495 }
+  },
+  "totals": {
+    "searchable": 56000,
+    "time_entries": 105000,
+    "time_entries_trailing_12_months": 18495
+  }
+}
