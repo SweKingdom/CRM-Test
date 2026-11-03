@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Respawn;
@@ -54,6 +55,14 @@ public sealed class DbFixture : IAsyncLifetime
         Environment.GetEnvironmentVariable("ZEPHYR_REQUIRE_DB") is { } value
         && (value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>The repository root: the first directory above the test binaries that holds package.json.</summary>
+    public static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "package.json"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("package.json not found above the test binaries");
+    }
+
     public async Task InitializeAsync()
     {
         if (ServerConnectionString() is not { } server)
@@ -95,6 +104,7 @@ public sealed class DbFixture : IAsyncLifetime
             SchemasToInclude = ["public"],
             // audit_log is append-only: its BEFORE DELETE trigger would make Respawn's DELETE FROM fail.
             // The throw-away database is dropped at the end of the run, so the rows need no cleaning.
+            // role and role_permission (US-143) are cleaned like any table: a test that needs them seeds them.
             TablesToIgnore = [new Table("__EFMigrationsHistory"), new Table("audit_log")]
         });
     }
@@ -124,6 +134,26 @@ public sealed class DbFixture : IAsyncLifetime
         await using var connection = new NpgsqlConnection(ConnectionString);
         await connection.OpenAsync();
         await respawner.ResetAsync(connection);
+    }
+
+    /// <summary>Runs <c>scripts/seed.mjs</c> (Node) against the test database, optionally with another seed directory.</summary>
+    public void RunSeedScript(string? seedDir = null)
+    {
+        var b = new NpgsqlConnectionStringBuilder(ConnectionString);
+        var url = $"postgres://{Uri.EscapeDataString(b.Username!)}:{Uri.EscapeDataString(b.Password ?? "")}" +
+                  $"@{b.Host}:{b.Port}/{b.Database}";
+        var start = new ProcessStartInfo("node") { WorkingDirectory = RepoRoot(), RedirectStandardError = true };
+        start.ArgumentList.Add("scripts/seed.mjs");
+        if (seedDir != null)
+        {
+            start.ArgumentList.Add("--dir");
+            start.ArgumentList.Add(seedDir);
+        }
+        start.Environment["DATABASE_URL"] = url;
+        using var process = Process.Start(start)!;
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, error);
     }
 
     /// <summary>A context for the test database; <paramref name="userId"/> null means no signed-in user.</summary>
