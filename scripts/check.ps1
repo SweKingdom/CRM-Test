@@ -69,11 +69,17 @@ function Step-lint {
     return $ok
 }
 
-# 2. Tests (the backend permission tests are part of dotnet test)
+# 2. Tests (the backend permission tests are part of dotnet test), then the frontend's unit tests
 function Step-tests {
     if (-not (Install-Deps .)) { return $false }
     if (-not (Initialize-TestDb)) { return $false }
-    return (Invoke-Native npm @('test', '--silent'))
+    $ok = Invoke-Native npm @('test', '--silent')
+    if (Test-NpmScript 'src/frontend' 'test') {
+        if (-not ((Install-Deps 'src/frontend') -and (Invoke-Native npm @('--prefix', 'src/frontend', 'run', 'test', '--silent')))) { $ok = $false }
+    } else {
+        Write-Host "frontend: no 'test' script yet, nothing to run"
+    }
+    return $ok
 }
 
 # 3. Seeds
@@ -173,8 +179,9 @@ function Step-vulnerabilities {
     return $ok
 }
 
-# 9. ui (only with -Ui): the Playwright permission suite in src/frontend/e2e against the running stack.
-# Requested and missing is a failure, so asking for it never passes silently.
+# 9. ui (only with -Ui): the Playwright suite in src/frontend/e2e against the Vite dev server (it starts one when none runs).
+# The specs mock the API; the sign-in smoke test and the permission suite (US-146) need the running stack and the seven Keycloak
+# test users. Requested and missing is a failure, so asking for it never passes silently.
 function Step-ui {
     if (-not (Test-Path 'src/frontend/e2e')) {
         Write-Host '--ui was requested but src/frontend/e2e does not exist yet (the Playwright permission suite, US-146 AC 2).'
