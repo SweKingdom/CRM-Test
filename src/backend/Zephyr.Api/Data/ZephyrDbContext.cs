@@ -95,6 +95,40 @@ public class AppUser : IEntity
     public DateTime? LastLoginAt { get; set; }
 }
 
+/// <summary>
+/// A personal API token (US-142) that acts as its owner. Only the hash is stored, never the plaintext. The row's
+/// <see cref="HashAlgorithm"/> names how <see cref="TokenHash"/> was made, so the algorithm can change later.
+/// </summary>
+public class ApiToken : IEntity
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public Guid? UpdatedBy { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string Custom { get; set; } = "{}";
+
+    /// <summary>The owner (<see cref="AppUser.Id"/>).</summary>
+    public Guid UserId { get; set; }
+
+    public string Name { get; set; } = "";
+
+    /// <summary>Lowercase hex SHA-256 of the token; the unique lookup key.</summary>
+    public string TokenHash { get; set; } = "";
+
+    public string HashAlgorithm { get; set; } = "sha256";
+
+    /// <summary>The first 12 characters of the token (<c>zph_</c> + 8), shown in lists so a user can tell tokens apart.</summary>
+    public string Prefix { get; set; } = "";
+
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+
+    /// <summary>Updated at most once per minute.</summary>
+    public DateTime? LastUsedAt { get; set; }
+}
+
 /// <summary>Append-only record of who did what (enforced by a database trigger).</summary>
 public class AuditLog
 {
@@ -113,6 +147,7 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
     public DbSet<AppUser> AppUsers => Set<AppUser>();
+    public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     public static string ConnectionStringFromEnvironment() =>
@@ -183,6 +218,16 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
             e.Property(x => x.Roles).HasColumnType("text[]");
             e.HasIndex(x => new { x.Issuer, x.Subject }).IsUnique().HasFilter("issuer is not null and subject is not null")
                 .HasDatabaseName("ux_app_user_issuer_subject");
+        });
+
+        // The foreign key to app_user is created by migration 0004 only. hash_algorithm has no model default: it is always sent.
+        modelBuilder.Entity<ApiToken>(e =>
+        {
+            e.ToTable("api_token", t => t.HasCheckConstraint("ck_api_token_name", "char_length(name) between 1 and 100"));
+            e.Property(x => x.TokenHash).HasColumnType("char(64)");
+            e.Property(x => x.Prefix).HasMaxLength(12);
+            e.HasIndex(x => x.TokenHash).IsUnique().HasDatabaseName("ux_api_token_token_hash");
+            e.HasIndex(x => x.UserId).HasFilter("revoked_at is null").HasDatabaseName("ix_api_token_user_id");
         });
 
         modelBuilder.Entity<AuditLog>(e =>

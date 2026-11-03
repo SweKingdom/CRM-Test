@@ -23,6 +23,8 @@ public static class ErrorCodes
     public const string LastAdmin = "LAST_ADMIN";
     public const string Forbidden = "FORBIDDEN";
     public const string MissingExchangeRate = "MISSING_EXCHANGE_RATE";
+    public const string OutOfRange = "OUT_OF_RANGE";
+    public const string TokenLimit = "TOKEN_LIMIT";
 }
 
 /// <summary>One failing field in a problem's <c>errors[]</c>.</summary>

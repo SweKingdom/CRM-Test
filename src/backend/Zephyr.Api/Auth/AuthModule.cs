@@ -33,7 +33,8 @@ public sealed record BootstrapAdmin(string? Issuer, string? Subject);
 /// <summary>
 /// Sign-in (US-140): OpenID Connect code flow with PKCE per configured provider, a session cookie, user matching,
 /// the bootstrap admin, the CSRF check for cookie writes and the /auth/* endpoints. Zephyr stores no passwords.
-/// Session limits and the user-status recheck (US-141) are in <see cref="SessionRules"/>.
+/// Session limits and the user-status recheck (US-141) are in <see cref="SessionRules"/>; personal API tokens
+/// (<c>Authorization: Bearer zph_...</c>, US-142) are in <see cref="ApiTokens"/>.
 /// </summary>
 public static class AuthModule
 {
@@ -45,7 +46,7 @@ public static class AuthModule
 
     public static string SchemeName(AuthProvider provider) => "oidc-" + provider.Name;
 
-    /// <summary>Registers the session cookie, one OIDC scheme per configured provider and default-deny authorisation.</summary>
+    /// <summary>Registers the session cookie, the API-token scheme, one OIDC scheme per configured provider and default-deny authorisation.</summary>
     public static WebApplicationBuilder AddZephyrAuth(this WebApplicationBuilder builder)
     {
         // ZEPHYR_AUTH__PROVIDERS__0__NAME and friends bind to Auth:Providers:0:Name.
@@ -62,24 +63,32 @@ public static class AuthModule
         builder.Services.AddOptions<CookieAuthenticationOptions>(CookieScheme)
             .Configure<TimeProvider>((options, time) => options.TimeProvider = time);
 
-        var authentication = builder.Services.AddAuthentication(CookieScheme).AddCookie(CookieScheme, options =>
-        {
-            options.Cookie = new SessionCookieBuilder { Name = "zephyr.session", HttpOnly = true, SameSite = SameSiteMode.Lax, IsEssential = true };
-            options.ExpireTimeSpan = session.Idle;
-            options.SlidingExpiration = true;
-            options.Events.OnValidatePrincipal = SessionRules.ValidateAsync;
-            // An API answers 401/403, it does not redirect to a login page.
-            options.Events.OnRedirectToLogin = context =>
+        // The default scheme sends a request carrying a zph_ bearer token to the token handler and every other request to the cookie.
+        var authentication = builder.Services.AddAuthentication(options =>
             {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                return Task.CompletedTask;
-            };
-            options.Events.OnRedirectToAccessDenied = context =>
+                options.DefaultScheme = ApiTokens.Selector;
+                options.DefaultSignInScheme = CookieScheme;
+                options.DefaultSignOutScheme = CookieScheme;
+            })
+            .AddApiTokenSchemes()
+            .AddCookie(CookieScheme, options =>
             {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return Task.CompletedTask;
-            };
-        });
+                options.Cookie = new SessionCookieBuilder { Name = "zephyr.session", HttpOnly = true, SameSite = SameSiteMode.Lax, IsEssential = true };
+                options.ExpireTimeSpan = session.Idle;
+                options.SlidingExpiration = true;
+                options.Events.OnValidatePrincipal = SessionRules.ValidateAsync;
+                // An API answers 401/403, it does not redirect to a login page.
+                options.Events.OnRedirectToLogin = context =>
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    return Task.CompletedTask;
+                };
+                options.Events.OnRedirectToAccessDenied = context =>
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return Task.CompletedTask;
+                };
+            });
         foreach (var provider in providers)
         {
             authentication.AddOpenIdConnect(SchemeName(provider), options => ConfigureProvider(options, provider));
@@ -364,8 +373,11 @@ public static class UserMatching
         return await SignedIn(db, byEmail, now);
     }
 
-    /// <summary>The session principal: <c>sub</c> and <c>zephyr_user_id</c> are the app_user id; roles and issuer come from Zephyr.</summary>
-    public static ClaimsPrincipal ToPrincipal(AppUser user)
+    /// <summary>
+    /// The session principal: <c>sub</c> and <c>zephyr_user_id</c> are the app_user id; roles and issuer come from Zephyr.
+    /// <paramref name="scheme"/> is the authentication type: the cookie by default, or the API-token scheme (US-142).
+    /// </summary>
+    public static ClaimsPrincipal ToPrincipal(AppUser user, string scheme = AuthModule.CookieScheme)
     {
         var claims = new List<Claim>
         {
@@ -376,7 +388,7 @@ public static class UserMatching
             new("issuer", user.Issuer ?? "")
         };
         claims.AddRange(user.Roles.Select(role => new Claim("role", role)));
-        return new ClaimsPrincipal(new ClaimsIdentity(claims, AuthModule.CookieScheme, "name", "role"));
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, scheme, "name", "role"));
     }
 
     private static async Task<AppUser> SignedIn(ZephyrDbContext db, AppUser user, DateTime now)

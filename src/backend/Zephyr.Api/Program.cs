@@ -34,6 +34,7 @@ var app = builder.Build();
 app.UseApiConventions();
 app.UseZephyrAuth();
 app.MapUsersEndpoints();
+app.MapApiTokenEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {

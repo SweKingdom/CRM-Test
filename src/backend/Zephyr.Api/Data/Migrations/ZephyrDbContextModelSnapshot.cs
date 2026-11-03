@@ -73,6 +73,100 @@ partial class ZephyrDbContextModelSnapshot : ModelSnapshot
             b.ToTable("account", (string)null);
         });
 
+        modelBuilder.Entity("Zephyr.Api.Data.ApiToken", b =>
+        {
+            b.Property<Guid>("Id")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("uuid")
+                .HasColumnName("id")
+                .HasDefaultValueSql("gen_random_uuid()");
+
+            b.Property<DateTime>("CreatedAt")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("CreatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("created_by");
+
+            b.Property<string>("Custom")
+                .IsRequired()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("jsonb")
+                .HasColumnName("custom")
+                .HasDefaultValueSql("'{}'::jsonb");
+
+            b.Property<DateTime?>("DeletedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("deleted_at");
+
+            b.Property<DateTime>("ExpiresAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("expires_at");
+
+            b.Property<string>("HashAlgorithm")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("hash_algorithm");
+
+            b.Property<DateTime?>("LastUsedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("last_used_at");
+
+            b.Property<string>("Name")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("name");
+
+            b.Property<string>("Prefix")
+                .IsRequired()
+                .HasMaxLength(12)
+                .HasColumnType("character varying(12)")
+                .HasColumnName("prefix");
+
+            b.Property<DateTime?>("RevokedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("revoked_at");
+
+            b.Property<string>("TokenHash")
+                .IsRequired()
+                .HasColumnType("char(64)")
+                .HasColumnName("token_hash");
+
+            b.Property<DateTime>("UpdatedAt")
+                .IsConcurrencyToken()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("updated_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("UpdatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("updated_by");
+
+            b.Property<Guid>("UserId")
+                .HasColumnType("uuid")
+                .HasColumnName("user_id");
+
+            b.HasKey("Id")
+                .HasName("pk_api_token");
+
+            b.HasIndex("TokenHash")
+                .IsUnique()
+                .HasDatabaseName("ux_api_token_token_hash");
+
+            b.HasIndex("UserId")
+                .HasDatabaseName("ix_api_token_user_id")
+                .HasFilter("revoked_at is null");
+
+            b.ToTable("api_token", null, t =>
+            {
+                t.HasCheckConstraint("ck_api_token_name", "char_length(name) between 1 and 100");
+            });
+        });
+
         modelBuilder.Entity("Zephyr.Api.Data.AppUser", b =>
         {
             b.Property<Guid>("Id")
