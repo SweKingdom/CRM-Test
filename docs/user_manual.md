@@ -98,18 +98,23 @@ Use a personal API token when a script or your AI assistant needs to act as you.
 
 ## Who can see and change what
 
-Access is decided by your role. The same rules apply in the screens and in the API.
+Access to project time depends on your role and on the approver assignments.
 
-| What you try to do | What happens |
+| What you want to do | Who can do it |
 |---|---|
-| Open a page you are not allowed to use | The **Access denied** page is shown. |
-| Open or change a record you cannot see | The record is shown as not found. |
-| See a record you can view but not change | The action button is hidden, and a change is refused. |
-| Use a personal API token | The token has exactly the permissions of its owner. |
+| Add or remove a time approver on a project | Administrators only (for now) |
+| See the time entries of a project you approve | That project's approvers |
+| Approve time for a project | That project's approvers and their delegates |
+| Delegate your approval rights for a date range | An approver of at least one project |
+| See a delegation you gave or received | The delegator, the delegate, and administrators |
+| Revoke a delegation | The delegator and administrators |
 
-**Tips**
-- If your role was changed by an administrator, the new access applies within about 5 minutes. Sign out and back in if you need it sooner.
-- Search results and lists only show records within your scope, and the totals count only those records.
+**Notes**
+- You cannot approve your own time, even when you hold delegated approval rights.
+- A delegation covers only the projects you approve yourself. It does not pass on rights you received from someone else.
+- A delegation is active on both its start date and its end date, using Swedish time. It ends at once when it is revoked.
+- Time entries of people who are not your approver or delegate are not shown to you.
+- The project's PM will be able to manage approvers once the project register is in place (US-161).
 
 ## Recording Claude usage on a pull request
 
