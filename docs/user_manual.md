@@ -34,3 +34,31 @@ Use this to fill a local database with realistic test data.
 Tip: Generated records are marked as synthetic. Do not use them as real customer data.
 
 Warning: Without `--reset`, a second volume load stops with an error that names `--reset`. Nothing is changed in that case.
+
+## Exchange rates and amounts in SEK
+
+Amounts are shown in their own currency and in SEK, so totals can be compared.
+
+**Supported currencies:** SEK (base), EUR, USD, NOK, AED and GBP.
+
+### How amounts are converted
+1. Each amount is kept in its own currency, for example 100.00 USD.
+2. The SEK value (shown as **amountSEK**) uses the exchange rate of the month of the business date.
+3. The rate date (**rateDate**) is the first day of that month.
+4. SEK amounts are not converted; the SEK value equals the amount.
+
+> **Tip:** Rates are per month. An amount in November uses the November rate, not the October rate.
+
+### How to view exchange rates
+1. Sign in.
+2. Open the exchange rates list. You can filter by **Currency** and sort by **Month** or **Updated**.
+
+### How to change an exchange rate (administrators only)
+1. Sign in with an account that has the **Admin** role.
+2. Select the currency and the month.
+3. Enter the rate to SEK (up to 6 decimals, greater than 0). SEK cannot be changed.
+4. Save. A new rate is created; an existing rate is updated.
+
+> **Warning:** Stored amounts keep the SEK value that was calculated when they were saved. Changing a rate does not change existing amounts.
+
+> **Note:** If a currency has no rate for the month of an amount, the amount cannot be saved and the message names the currency and the month. Ask an administrator to add the rate.
