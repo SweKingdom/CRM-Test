@@ -107,3 +107,14 @@ Each user has one or more roles: Salesperson, BDR, PM, Consultant, Finance, Mana
 - Management can read the organisation's records and use the dashboards.
 
 Note: the permission rules are being rolled out. Access enforcement in the screens is not yet active, and the rules are still awaiting sign-off by the product owner. For the full matrix, see `docs/permissions.md`.
+
+## Recording Claude usage on a pull request
+
+Every pull request for a story records the Claude usage for that story.
+
+1. Open the pull request description.
+2. Find the **Claude usage** section.
+3. Run `node tools/claude-usage/cli.mjs report` in the repository and find the total for your story.
+4. Enter the totals in **Tokens in**, **Tokens out** and **Cost (USD)**.
+
+Tip: the usage files are written automatically by the pre-commit hook. Do not edit them by hand.
