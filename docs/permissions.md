@@ -64,6 +64,27 @@ For the project entities the scopes mean:
 
 Self-approval is not allowed whatever the matrix says: the engine refuses to let a person approve their own time.
 
+## Approvers and delegation (US-145)
+
+Approvers are set per project. An approver may read the time entries of that project (the one exception to consultant privacy)
+and approve them. Nobody approves their own entry, as approver or as delegate (403).
+
+| Endpoint | Who | Result |
+|---|---|---|
+| `PUT /api/v1/projects/{id}/approvers/{userId}` | Admin (the project's PM joins with the project register, US-161) | 204, repeating it is fine; 404 unknown user |
+| `DELETE /api/v1/projects/{id}/approvers/{userId}` | Admin | 204, repeating it is fine |
+| `POST /api/v1/delegations` `{delegateId, fromDate, toDate}` | The delegator (the caller); an Admin may add `delegatorId` to act for someone | 201 `{id, delegatorId, delegateId, fromDate, toDate}`; 422 when `toDate` is before `fromDate`, the delegate is the delegator or unknown, or the delegator is not an approver of any project |
+| `GET /api/v1/delegations` | The caller (as delegator or delegate); an Admin sees all | List, revoked ones included with `revokedAt` |
+| `DELETE /api/v1/delegations/{id}` | The delegator or an Admin | 204; 404 when unknown, already revoked or not yours |
+
+- A delegate holds the delegator's own approver projects when `revoked_at` is empty and today (the Europe/Stockholm date from
+  `BusinessClock`, both ends inclusive) is between `fromDate` and `toDate`. It is checked on every request and never cached, so a revoke ends it at once.
+- Delegation is not transitive: a delegate gets only the delegator's own `project_approver` projects, and a user whose only approver
+  rights are delegated cannot delegate (422).
+- Every change is written to the audit log (`approver_added`, `approver_removed`, `delegation_created`, `delegation_revoked`).
+- Code that reads or approves time uses `Approvers.ApproverScopeAsync(db, userId, today)`, `Approvers.IsApproverOfAsync(...)` and
+  `Approvers.EnsureNotSelfApproval(entryUserId, callerId)` (US-166, US-170). Until the time-entry features exist these helpers are the tested contract.
+
 ## Entities
 
 `account`, `contact`, `lead`, `opportunity`, `meddpicc`, `activity`, `project`, `project_team_member`, `skill`, `time_type`,

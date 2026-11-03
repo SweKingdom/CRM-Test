@@ -35,6 +35,8 @@ var app = builder.Build();
 app.UseApiConventions();
 app.UseZephyrAuth();
 app.MapUsersEndpoints();
+// Per-project time approvers and delegation (US-145).
+app.MapApprovers();
 
 using (var scope = app.Services.CreateScope())
 {
