@@ -385,3 +385,28 @@ Backend tests in `Zephyr.Api.Tests/Permissions/MatrixCoverageTests.cs` check the
 - **Gate:** the tests run in step `tests` of `scripts/check`. `scripts/check --ui` (`-Ui`) adds step `ui`, which fails until `src/frontend/e2e` exists.
 - **CI:** set `ZEPHYR_REQUIRE_DB=1` so the database tests cannot be skipped.
 - **Not yet built:** Playwright UI routes, time privacy, search leak tests (follow-up stories).
+
+## Search (US-147)
+
+Endpoint: `GET /api/v1/search?q=&types=&limit=`. Response: `{items:[{type,id,title,snippet,score}], fallback}`.
+
+| Item | Rule |
+|---|---|
+| `q` | 2 to 100 characters after trimming. Otherwise 400 problem+json. |
+| `limit` | 1 to 50, default 20. |
+| `types` | CSV of `account`, `contact`, `lead`, `opportunity`, `project`. |
+| Access | `RequireRoles` with every matrix role. 401 without a session, 403 when the caller can read none of the searchable types. |
+
+**Data model:** table `search_document` holds one row per searchable record, with normalised `title`, `text`, `tsv` (GIN) and `text gin_trgm_ops` (GIN). Also stores `type`, `owner_id`, `account_id`, `country_code`, `business_unit`, `updated_at`, `subtitle`, `weight`.
+
+**Sync:** `search_install_trigger(table, type, title_expr, text_expr, ...)` creates an insert, update and delete trigger in the same transaction. Parameter `p_hidden` removes the row when the expression is true (for example `new.deleted_at is not null or new.anonymised_at is not null`). Only the `account` trigger exists (`owner_id` = `created_by`, `country_code`).
+
+**Search steps:** full-text first (ranking: exact title, title prefix, `ts_rank_cd` with recent-activity boost, entity weight, `updated_at`). Trigram second, only when fewer than 5 full-text items are returned and the limit is greater than 5: `word_similarity` with threshold 0.3. `fallback` is `true` when the trigram step ran.
+
+**Permissions:** `IPermissionService.Scope(user, type, "read")` per type, applied in both steps before ranking and limit. Scope `none` matches no row. Account owner is `created_by`, account country is the contracting country.
+
+**Normalisation:** `f_unaccent` and `f_search_norm` (trim, punctuation to space, lower case, unaccent) from migration 0004. Requires the `pg_trgm` and `unaccent` extensions.
+
+**Operations:** after a bulk load, run `npm run seed -- --volume` or `REINDEX TABLE search_document; ANALYZE search_document;`. Benchmark: `npm run bench:search -- --explain` (needs `ZEPHYR_BENCH_COOKIE`).
+
+**Not yet:** OpenAPI entry for the route. Triggers for contact, lead, opportunity and project (added by their own stories).
