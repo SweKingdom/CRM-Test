@@ -350,3 +350,23 @@ Covers US-143 and US-144. Enforcement is in `Permissions/`.
 **Audit:** `approver_added`, `approver_removed`, `delegation_created`, `delegation_revoked`.
 
 **Deferred:** the `PermissionService` OR-predicate (US-144), the PM-of-project rule and project FK (US-161), and endpoint-level self-approval and time-entry 404 checks (US-166, US-170). Details in `docs/permissions.md`.
+
+## API description (OpenAPI)
+
+The API description is generated, committed and checked on every change (US-136).
+
+| Item | Value |
+|---|---|
+| Generated file | `docs/api/openapi.json` (OpenAPI 3.1.0, `servers[0].url` = `/api/v1`) |
+| Generator | `tools/openapi-from-metadata/generate.mjs` (Node only, no dependencies); `[metadata.json] [--out file]` |
+| Metadata source | `tools/openapi-from-metadata/field-metadata.json` (interim, hand-maintained; see US-182) |
+| Output format | `JSON.stringify`, sorted keys, 2-space indent, LF. No timestamps. |
+| Lint | Spectral 6.15.0 with `.spectral.yaml` (`SPECTRAL_VERSION`) |
+| Breaking-change check | oasdiff 1.11.7 (`OASDIFF_VERSION`), base `origin/main:docs/api/openapi.json` |
+| Contract test | `OpenApiContractTests` (registered routes must equal documented routes) |
+
+Rules:
+- Never edit `docs/api/openapi.json` by hand. Change the metadata and run `node tools/openapi-from-metadata/generate.mjs`.
+- Shared components: `ProblemDetails` (errors, `application/problem+json`), `Page` (list endpoints), `Money` (money fields), parameters `Limit`, `Cursor`, `Filter`, `Sort`, `IfMatch` (`If-Match`), header `ETag`.
+- Breaking changes (removed field, narrowed type, new required property) fail the oasdiff step unless a deliberate break is approved via PR label and an `oasdiff` changelog note.
+- The `openapi-regenerate` step fails with "run generate" when the committed file differs from the generated output.
