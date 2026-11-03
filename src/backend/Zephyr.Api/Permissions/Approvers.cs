@@ -20,13 +20,24 @@ public static class Approvers
     private const string DelegationEntity = "approval_delegation";
     private static readonly JsonElement NoBody = EmptyObject();
 
+    /// <summary>
+    /// Every user role. The delegation routes belong to no matrix entity: they are about the caller's own approval rights, so any
+    /// signed-in user with a role may call them and the handlers scope everything to the caller (an Admin sees and revokes all).
+    /// </summary>
+    private static readonly string[] AnyRole = PermissionSeeder.Roles.Select(r => r.Key).ToArray();
+
     public static WebApplication MapApprovers(this WebApplication app)
     {
-        app.MapPut("/api/v1/projects/{id:guid}/approvers/{userId:guid}", AddApproverAsync).WithWriteHooks();
-        app.MapDelete("/api/v1/projects/{id:guid}/approvers/{userId:guid}", RemoveApproverAsync);
-        app.MapPost("/api/v1/delegations", CreateDelegationAsync).WithWriteHooks();
-        app.MapGet("/api/v1/delegations", ListDelegationsAsync);
-        app.MapDelete("/api/v1/delegations/{id:guid}", RevokeDelegationAsync);
+        // TODO(US-161): allow the project's PM as well as Admin once the project register exists.
+        app.MapPut("/api/v1/projects/{id:guid}/approvers/{userId:guid}", AddApproverAsync)
+            .RequireRoles(AppUser.AdminRole)
+            .WithWriteHooks();
+        app.MapDelete("/api/v1/projects/{id:guid}/approvers/{userId:guid}", RemoveApproverAsync)
+            .RequireRoles(AppUser.AdminRole);
+
+        app.MapPost("/api/v1/delegations", CreateDelegationAsync).RequireRoles(AnyRole).WithWriteHooks();
+        app.MapGet("/api/v1/delegations", ListDelegationsAsync).RequireRoles(AnyRole);
+        app.MapDelete("/api/v1/delegations/{id:guid}", RevokeDelegationAsync).RequireRoles(AnyRole);
         return app;
     }
 
@@ -92,11 +103,9 @@ public static class Approvers
 
     // ---- approvers ----
 
-    // TODO(US-161): allow the project's PM as well as Admin and answer 404 for an unknown project, once the project register exists.
     private static async Task<IResult> AddApproverAsync(
         Guid id, Guid userId, HttpContext context, ZephyrDbContext db, ICurrentUser current, CancellationToken ct)
     {
-        await InterimRoleGate.RequireAsync(context, [AppUser.AdminRole]);
         await WriteHooks.Run(context, ApproverEntity, NoBody);
         if (!await db.AppUsers.AnyAsync(u => u.Id == userId, ct))
         {
@@ -118,9 +127,8 @@ public static class Approvers
     }
 
     private static async Task<IResult> RemoveApproverAsync(
-        Guid id, Guid userId, HttpContext context, ZephyrDbContext db, ICurrentUser current, CancellationToken ct)
+        Guid id, Guid userId, ZephyrDbContext db, ICurrentUser current, CancellationToken ct)
     {
-        await InterimRoleGate.RequireAsync(context, [AppUser.AdminRole]);
         var actor = current.UserId ?? SystemUser.Id;
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var removed = await db.Database.ExecuteSqlInterpolatedAsync(

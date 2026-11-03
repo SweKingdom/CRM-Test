@@ -300,17 +300,18 @@ Integrations write idempotently through `PUT /api/v1/{plural}/by-external-id/{sy
 
 ## Permission model (US-143)
 
-- **Source of truth:** `src/backend/Zephyr.Api/Permissions/permission-matrix.csv` (embedded resource, 665 rows = 7 roles × 19 entities × 5 actions). Columns: role, entity, action, scope.
-- **Scopes:** `none`, `own`, `team`, `country`, `org`. `country` means the contracting country (`app_user.home_country`). There is no business-unit scope.
-- **Tables:**
-  - `role(key text PK, label text not null)`: 7 rows, keys in title case (Salesperson, BDR, PM, Consultant, Finance, Management, Admin).
-  - `role_permission(role_key FK role, entity, action in read|create|update|delete|approve, scope in none|own|team|country|org)`, PK (role_key, entity, action). All 665 rows are stored; an absent row also means `none`.
-  - `app_user.manager_id uuid null` FK `app_user(id)`, check `manager_id <> id`, partial index.
-- **Migration:** `0004_RolesPermissions`. `Down` drops both tables and the column.
-- **Seeding:** `PermissionSeeder.SeedAsync` validates the CSV first (unknown role, entity, action or scope; wrong header or column count; duplicate row). It then upserts in one transaction, skips unchanged rows, and deletes rows and roles no longer in the CSV. It runs at API start after `Migrate()` and in `import` mode. An invalid CSV stops the API.
-- **Not built yet:** the enforcement engine (scope predicates, `RequirePermission`).
-- **Docs:** `docs/permissions.md` (model, team, project-scoped access, matrix).
-- **Tests:** `MatrixTests` (`Ac1_*` to `Ac5_*`, Respawn reset regression). DB tests need `ZEPHYR_TEST_DB`.
+Covers US-143 and US-144. Enforcement is in `Permissions/`.
+
+- **Source of truth:** roles, home country and team come from `app_user` through `IUserStatus.GetAsync`, cached for `USER_STATUS_RECHECK_SECONDS` (default 300). Claims are not used for authorisation, so cookie and token sessions behave the same.
+- **Scopes:** `own` (owner column = caller), `team` (owner in caller's team), `country` (country column = home country; never matches without one), `org` (all rows). The widest scope across the caller's roles applies. Values are bound as query parameters.
+- **Columns:** `PermissionService.Columns` maps each entity to its owner and country columns. Today: `account` (owner `created_by`).
+- **Endpoint declarations:** `RequirePermission(entity, action)` returns 401 when nobody is signed in and 403 when the scope is `none`. `RequireRoles(...)` is used for role-only routes: external upsert (Admin, Integration) and soft delete (Admin). `AsMeEndpoint()` marks routes for the caller only.
+- **Single-record access:** `FindAsync` returns 404 when the caller cannot read the record and 403 when it can read but may not perform the action.
+- **Default deny:** every endpoint must declare a permission, use `RequireRoles`, be `me`, or be on the anonymous allow-list in `AnonymousAllowList.cs`. A test enumerates endpoints and fails on any other.
+- **UI parity:** `GET /api/v1/me/permissions` (`Cache-Control: no-store`) returns `{roles, permissions, routes}` from the same engine. The frontend route guard reads it once per page load and again after a 401 or 403.
+- **Extension rule:** entity list, detail and search routes must use `PermissionService.Filter` and `FindAsync` and declare their columns in `PermissionService.Columns`. Project-based predicates for `project` and `time_entry` are added by US-145.
+- **Limits:** field-level security is not implemented. Token tests use a stand-in handler until US-142's real token handler is merged; AC 5 and AC 7 must be re-run then.
+- **Files:** `docs/permissions.md` (enforcement section).
 
 ## Claude usage logging (US-138)
 

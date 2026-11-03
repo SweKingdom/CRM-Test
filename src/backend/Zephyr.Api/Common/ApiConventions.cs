@@ -1,4 +1,5 @@
 using Zephyr.Api.Data;
+using Zephyr.Api.Permissions;
 
 namespace Zephyr.Api.Common;
 
@@ -15,6 +16,7 @@ public static class ApiConventions
         services.AddWriteHooks();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<BusinessClock>();
+        services.AddPermissions();
 
         // Binding failures (bad route value, unreadable body) throw, so the global handler answers them as problems.
         services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
