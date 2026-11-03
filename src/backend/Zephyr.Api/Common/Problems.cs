@@ -19,6 +19,7 @@ public static class ErrorCodes
     public const string RecordDeleted = "RECORD_DELETED";
     public const string CsrfRejected = "CSRF_REJECTED";
     public const string NotInScope = "NOT_IN_SCOPE";
+    public const string Forbidden = "FORBIDDEN";
     public const string MissingExchangeRate = "MISSING_EXCHANGE_RATE";
 }
 
