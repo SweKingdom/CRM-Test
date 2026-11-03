@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-11-03 — US-131 Synthetic volume seed (~56,000 records, ~105,000 time entries): `npm run seed -- --volume` loads synthetic test data with a reset guard and skips tables that do not exist yet.
 - 2026-11-03 — US-137 README "Run Zephyr locally", BUILD.md sections and local-edition ADR: added the README run section, BUILD.md with the FT-108 section, the feature-section template, ADR-013 (Proposed) and the ADR approval index.
 - 2026-11-03 — US-132 scripts/check quality gate and GitHub Actions: one local check script (`scripts/check` and `scripts/check.ps1`) runs eight steps in fixed order with a summary and exit 1 on failure; the PR workflow runs the same script with a Postgres service and no deployment.
 - 2026-11-03 — US-140 OIDC sign-in with user matching and bootstrap admin: sign-in through the identity provider (PKCE), pre-provisioned users only, bootstrap admin, CSRF header check, same-origin SPA with no CORS.
