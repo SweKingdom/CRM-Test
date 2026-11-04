@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="1280" height="760" fill="#f3f3f3"/>
+  <!-- global header -->
+  <rect width="1280" height="48" fill="#ffffff"/>
+  <rect x="16" y="12" width="24" height="24" rx="12" fill="#00a1e0"/>
+  <rect x="380" y="10" width="520" height="28" rx="14" fill="#f3f3f3" stroke="#c9c9c9"/>
+  <text x="400" y="29" font-size="13" fill="#747474">Search…</text>
+  <circle cx="1240" cy="24" r="14" fill="#d8dde6"/>
+  <!-- app nav -->
+  <rect y="48" width="1280" height="40" fill="#ffffff" stroke="#e5e5e5"/>
+  <text x="24" y="74" font-size="15" font-weight="600" fill="#181818">CRM test</text>
+  <text x="200" y="74" font-size="13" fill="#0b5cab">Tickets</text>
+  <rect x="200" y="84" width="60" height="3" fill="#0b5cab"/>
+  <!-- record header -->
+  <rect x="24" y="104" width="1232" height="96" rx="8" fill="#ffffff" stroke="#e5e5e5"/>
+  <rect x="44" y="124" width="48" height="48" rx="6" fill="#7f8de1"/>
+  <text x="108" y="140" font-size="13" fill="#444">Ticket</text>
+  <text x="108" y="166" font-size="22" font-weight="700" fill="#181818">AI-TEST US-156 · Opportunity model and metadata-driven stages</text>
+  <rect x="1020" y="132" width="90" height="32" rx="4" fill="#ffffff" stroke="#c9c9c9"/>
+  <text x="1044" y="153" font-size="13" fill="#0b5cab">Edit</text>
+  <rect x="1120" y="132" width="110" height="32" rx="4" fill="#ffffff" stroke="#c9c9c9"/>
+  <text x="1136" y="153" font-size="13" fill="#0b5cab">Delete</text>
+  <!-- details -->
+  <rect x="24" y="216" width="1232" height="460" rx="8" fill="#ffffff" stroke="#e5e5e5"/>
+  <text x="44" y="250" font-size="15" font-weight="700" fill="#181818">Details</text>
+  
+    <text x="56" y="300" font-size="13" fill="#444">Status</text>
+    <text x="56" y="324" font-size="16" fill="#181818">In Progress</text>
+    <line x1="56" y1="336" x2="556" y2="336" stroke="#e5e5e5"/>
+    
+    <text x="616" y="300" font-size="13" fill="#444">Owner</text>
+    <text x="616" y="324" font-size="16" fill="#181818">QA tester (AI)</text>
+    <line x1="616" y1="336" x2="1116" y2="336" stroke="#e5e5e5"/>
+    
+    <text x="56" y="374" font-size="13" fill="#444">Priority</text>
+    <text x="56" y="398" font-size="16" fill="#181818">High</text>
+    <line x1="56" y1="410" x2="556" y2="410" stroke="#e5e5e5"/>
+    
+    <text x="616" y="374" font-size="13" fill="#444">Last Modified By</text>
+    <text x="616" y="398" font-size="16" fill="#181818">QA tester (AI)</text>
+    <line x1="616" y1="410" x2="1116" y2="410" stroke="#e5e5e5"/>
+    
+  <rect x="470" y="58" width="340" height="44" rx="6" fill="#2e844a"/><text x="640" y="86" font-size="15" fill="#fff" text-anchor="middle">✓ AC 2 — stage by key verified</text>
+  
+  <!-- tester callout -->
+  <rect x="760" y="520" width="480" height="124" rx="8" fill="#ffffff" stroke="#2e844a" stroke-width="2"/>
+  <text x="780" y="548" font-size="14" font-weight="700" fill="#2e844a">✓ Works · AC 2 — stage by key</text>
+  <text x="780" y="572" font-size="13" fill="#3e3e3c">Migration 0006 stores only stage_key. Ac2 test compares</text><text x="780" y="592" font-size="13" fill="#3e3e3c">to_jsonb(opportunity row) before and after a label update, so</text><text x="780" y="612" font-size="13" fill="#3e3e3c">updated_at is unchanged, and /stages shows the new label. The frontend</text><text x="780" y="632" font-size="13" fill="#3e3e3c">reads labels from useStages().</text>
+  <!-- caption -->
+  <rect y="724" width="1280" height="36" fill="#282b34"/>
+  <text x="20" y="747" font-size="13" fill="#dacbb4">🦌 US-156 · AC 2 — stage by key · iteration 2</text>
+</svg>
