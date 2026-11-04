@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
+using Zephyr.Api.Permissions;
 
 namespace Zephyr.Api.Finance;
 
@@ -10,9 +11,6 @@ namespace Zephyr.Api.Finance;
 public static class ExchangeRates
 {
     public const string BaseCurrency = "SEK";
-
-    /// <summary>Role key that may edit rates. Sign-in (US-140) and permissions (FT-112) put it on the principal.</summary>
-    public const string AdminRole = "Admin";
 
     private const string Url = "/api/v1/exchange-rates";
 
@@ -60,17 +58,6 @@ public static class ExchangeRates
         row.UpdatedAt
     };
 
-    /// <summary>401 when nobody is signed in, 403 when the user is not an admin and the action needs one; otherwise null.</summary>
-    private static int? DeniedStatus(HttpContext context, bool adminOnly)
-    {
-        if (context.User.Identity?.IsAuthenticated != true)
-        {
-            return StatusCodes.Status401Unauthorized;
-        }
-
-        return adminOnly && !context.User.IsInRole(AdminRole) ? StatusCodes.Status403Forbidden : null;
-    }
-
     /// <summary>Reads <c>rateToSek</c> (number or string, above 0, at most 6 decimals). Adds an error and returns 0 when invalid.</summary>
     private static decimal ReadRate(JsonElement body, ModelState state)
     {
@@ -90,27 +77,18 @@ public static class ExchangeRates
         return rate;
     }
 
+    /// <summary>Rates are reference data: anyone who may read reference data lists them, and only who may update it (Admin) sets them.</summary>
     public static IEndpointRouteBuilder MapExchangeRates(this IEndpointRouteBuilder routes)
     {
         routes.MapGet(Url, async Task<IResult> (HttpContext context, ZephyrDbContext db) =>
         {
-            if (DeniedStatus(context, adminOnly: false) is { } denied)
-            {
-                return Results.StatusCode(denied);
-            }
-
             var query = ListQuery<ExchangeRate>.Parse(context.Request.Query, Spec);
             return Results.Ok((await query.ToPageAsync(db.ExchangeRates.AsNoTracking(), context.RequestAborted)).Select(Dto));
-        });
+        }).RequirePermission("reference_data", "read");
 
-        // Body {"rateToSek": ...}. 201 when the month had no rate yet, 200 when an existing rate was set. Admin only.
+        // Body {"rateToSek": ...}. 201 when the month had no rate yet, 200 when an existing rate was set.
         routes.MapPut($"{Url}/{{currency}}/{{month}}", async Task<IResult> (string currency, string month, HttpContext context, ZephyrDbContext db) =>
         {
-            if (DeniedStatus(context, adminOnly: true) is { } denied)
-            {
-                return Results.StatusCode(denied);
-            }
-
             var ct = context.RequestAborted;
             var body = await WriteHooks.ReadBodyAsync(context.Request, ct);
             await WriteHooks.Run(context, "exchange_rate", body);
@@ -152,7 +130,7 @@ public static class ExchangeRates
             await db.SaveChangesAsync(ct);
             ETags.Set(context.Response, row);
             return created ? Results.Created($"{Url}/{currency}/{MonthText(first)}", Dto(row)) : Results.Ok(Dto(row));
-        }).WithWriteHooks();
+        }).RequirePermission("reference_data", "update").WithWriteHooks();
 
         return routes;
     }

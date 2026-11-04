@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -11,12 +11,12 @@ const STEPS = ['lint', 'tests', 'seeds', 'openapi-regenerate', 'spectral', 'oasd
 const bashAvailable = process.platform !== 'win32' && spawnSync('bash', ['--version']).status === 0;
 const bash = { skip: bashAvailable ? false : 'needs bash on a POSIX platform' };
 
-// Sources scripts/check without running it, replaces every step with a stub, and runs main.
+// Sources scripts/check without running it, replaces every step (and the optional ui step) with a stub, and runs main.
 const stub = (name, body) => `step_${name.replaceAll('-', '_')}() { ${body}; }`;
-function runCheck(bodies = {}, env = {}) {
-  const stubs = STEPS.map((name) => stub(name, bodies[name] ?? 'true')).join('\n');
+function runCheck(bodies = {}, env = {}, args = '') {
+  const stubs = [...STEPS, 'ui'].map((name) => stub(name, bodies[name] ?? 'true')).join('\n');
   const { REQUIRE_ALL, CI, ...clean } = process.env;
-  const run = spawnSync('bash', ['-c', `source scripts/check\n${stubs}\nmain`], {
+  const run = spawnSync('bash', ['-c', `source scripts/check\n${stubs}\nmain ${args}`], {
     cwd: root,
     encoding: 'utf8',
     env: { ...clean, ...env },
@@ -72,14 +72,53 @@ test('REQUIRE_ALL=1 fails a skipped step whose tool is missing, but not a "needs
   assert.deepEqual(strict.rows.filter((r) => r[0] === 'SKIP').map((r) => r[1]), ['spectral', 'schemathesis']);
 });
 
-test('PO answer #124: both scripts use the one API description path docs/api/openapi.json and the metadata generator', () => {
+test('US-146 AC 5: both scripts add the ui step only on request, and it is not one of the eight', () => {
+  const script = read('scripts/check');
+  assert.doesNotMatch(/^STEPS=\(([^)]*)\)/m.exec(script)[1], /\bui\b/);
+  assert.match(script, /--ui\) steps\+=\(ui\)/);
+  assert.match(script, /^step_ui\(\)/m);
+  assert.match(read('scripts/check.ps1'), /^function Step-ui /m);
+  assert.match(read('scripts/check.ps1'), /\$Ui -or \(\$args -contains '--ui'\)/);
+});
+
+test('US-146 AC 5: --ui runs a ninth step after the eight and its failure fails the check', bash, () => {
+  const passing = runCheck({}, {}, '--ui');
+  assert.equal(passing.status, 0);
+  assert.deepEqual(passing.rows, [...STEPS, 'ui'].map((name) => ['PASS', name]));
+  const failing = runCheck({ ui: 'false' }, {}, '--ui');
+  assert.equal(failing.status, 1);
+  assert.deepEqual(failing.rows.at(-1), ['FAIL', 'ui']);
+  assert.match(failing.stdout, /^FAILED: 1 of 9 steps failed/m);
+});
+
+test('US-146 AC 5: an unknown argument is refused and runs nothing', bash, () => {
+  const { status, stdout, rows } = runCheck({}, {}, '--bogus');
+  assert.equal(status, 1);
+  assert.match(stdout, /^Usage: scripts\/check \[--ui\]/m);
+  assert.deepEqual(rows, []);
+});
+
+// Once the Playwright suite exists this test no longer applies: its own run is the proof.
+const noE2e = { skip: !bashAvailable ? 'needs bash on a POSIX platform' : existsSync(new URL('../src/frontend/e2e', import.meta.url)) ? 'the e2e suite exists' : false };
+test('US-146 AC 5: the real ui step fails with a clear message while src/frontend/e2e does not exist', noE2e, () => {
+  const run = spawnSync('bash', ['-c', 'source scripts/check; step_ui'], { cwd: root, encoding: 'utf8' });
+  assert.equal(run.status, 1);
+  assert.match(run.stdout, /--ui was requested but src\/frontend\/e2e does not exist/);
+});
+
+test('US-136: every copy of the API description path is docs/api/openapi.json (PO answer #124 and #135) and the scripts use the metadata generator', () => {
   assert.match(read('scripts/check'), /^OPENAPI_FILE=docs\/api\/openapi\.json$/m);
   assert.match(read('scripts/check.ps1'), /^\$OpenApiFile = 'docs\/api\/openapi\.json'$/m);
+  assert.match(read('tools/openapi-from-metadata/generate.mjs'), /^const DEFAULT_OUT = resolve\(here, '\.\.', '\.\.', 'docs', 'api', 'openapi\.json'\);$/m);
+  assert.match(read('.gitattributes'), /^docs\/api\/openapi\.json text eol=lf$/m);
   for (const script of ['scripts/check', 'scripts/check.ps1']) {
     assert.match(read(script), /tools\/openapi-from-metadata\/generate\.mjs/);
-    assert.doesNotMatch(read(script), /(^|[^/])openapi\/openapi\.json/, script);
+    assert.doesNotMatch(read(script), /(^|[^/])openapi\/openapi\./, script);
   }
-  assert.doesNotMatch(read('README.md'), /(^|[^/])openapi\/openapi\.json/);
+
+  for (const file of ['scripts/check', 'scripts/check.ps1', 'README.md', '.gitattributes', '.github/workflows/check.yml', 'tools/openapi-from-metadata/generate.mjs', 'src/backend/Zephyr.Api.Tests/Common/OpenApiContractTests.cs']) {
+    assert.doesNotMatch(read(file), /openapi\.ya?ml|toYaml/, `${file} still names the YAML file or writer`);
+  }
 });
 
 test('AC 3: the workflow runs scripts/check on pull requests with read-only access and a Postgres service, and releases nothing', () => {
@@ -94,6 +133,13 @@ test('AC 3: the workflow runs scripts/check on pull requests with read-only acce
   assert.match(workflow, /REQUIRE_ALL: "1"/);
   assert.doesNotMatch(workflow, /deploy|login|push|secrets\.|docker compose/i);
   for (const [, action] of workflow.matchAll(/uses: (\S+)/g)) assert.match(action, /@v\d+$/, action);
+});
+
+test('US-136: the workflow installs a pinned oasdiff release before the gate runs', () => {
+  const workflow = read('.github/workflows/check.yml');
+  assert.match(workflow, /OASDIFF_VERSION: "\d+\.\d+\.\d+"/);
+  assert.match(workflow, /releases\/download\/v\$\{OASDIFF_VERSION\}\/oasdiff_\$\{OASDIFF_VERSION\}_linux_amd64\.tar\.gz/);
+  assert.ok(workflow.indexOf('Install oasdiff') < workflow.indexOf('run: bash scripts/check'));
 });
 
 test('AC 3: the Postgres service uses the values of .env.example, and the .NET version is the project one', () => {

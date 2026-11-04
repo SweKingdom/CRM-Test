@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
+using Zephyr.Api.Auth;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
 using Zephyr.Api.Permissions;
@@ -14,7 +15,9 @@ namespace Zephyr.Api.Activities;
 /// Calls, meetings, notes, tasks and emails in one table (US-151, ADR-010). The record an activity is "regarding" is
 /// polymorphic (type + id); the server resolves it, derives <c>account_id</c> from it and sets <c>connected</c> from the call
 /// outcome, so none of those can come from a client. Plain SQL with typed parameters, one transaction per write.
-/// This file holds the routes and the SQL; the field and regarding validation is in <c>ActivityValidation.cs</c>.
+/// Access follows the permission matrix (entity <c>activity</c>): a caller with <c>org</c> scope for an action reaches every
+/// activity, anyone else only the ones they created. This file holds the routes and the SQL; the field and regarding
+/// validation is in <c>ActivityValidation.cs</c>.
 /// </summary>
 public static partial class ActivityEndpoints
 {
@@ -22,12 +25,6 @@ public static partial class ActivityEndpoints
     private const string Route = "/api/v1/activities";
     private const int DefaultLimit = 25;
     private const int MaxLimit = 100;
-
-    // TODO(US-144): replace with RequirePermission("activity", read|create|update|delete) and the scope predicate (own / org),
-    // which also decides whether the regarding record is visible. Interim rules follow permission-matrix.csv.
-    private static readonly string[] WriteRoles = ["Salesperson", "BDR"];
-    private static readonly string[] OrgReadRoles = ["Management", "Admin"];
-    private static readonly string[] ReadRoles = [.. WriteRoles, .. OrgReadRoles];
 
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
@@ -47,7 +44,7 @@ public static partial class ActivityEndpoints
                 where p.activity_id = a.id and p.deleted_at is null), '[]'::jsonb))
         """;
 
-    // a visible row is not deleted and, for a caller with "own" scope, created by the caller
+    // a visible row is not deleted and, for a caller without org scope, created by the caller
     private const string Visible = "a.deleted_at is null and (@owner::uuid is null or a.created_by = @owner::uuid)";
 
     private const string SelectOne = "select " + Json + "::text as \"Value\" from activity a where a.id = @id and " + Visible;
@@ -128,11 +125,11 @@ public static partial class ActivityEndpoints
 
     public static IEndpointRouteBuilder MapActivityEndpoints(this IEndpointRouteBuilder routes)
     {
-        routes.MapPost(Route, CreateAsync).WithWriteHooks();
-        routes.MapGet(Route, ListAsync);
-        routes.MapGet(Route + "/{id:guid}", GetAsync);
-        routes.MapPatch(Route + "/{id:guid}", PatchAsync).WithWriteHooks();
-        routes.MapDelete(Route + "/{id:guid}", DeleteAsync);
+        routes.MapPost(Route, CreateAsync).RequirePermission(Entity, "create").WithWriteHooks();
+        routes.MapGet(Route, ListAsync).RequirePermission(Entity, "read");
+        routes.MapGet(Route + "/{id:guid}", GetAsync).RequirePermission(Entity, "read");
+        routes.MapPatch(Route + "/{id:guid}", PatchAsync).RequirePermission(Entity, "update").WithWriteHooks();
+        routes.MapDelete(Route + "/{id:guid}", DeleteAsync).RequirePermission(Entity, "delete");
         return routes;
     }
 
@@ -140,6 +137,7 @@ public static partial class ActivityEndpoints
     /// Moves the activities regarding a contact to the contact's new account (AC 5). Call it inside the transaction that
     /// changes the contact (<c>db.Database.BeginTransactionAsync</c>): it joins that transaction, so a failure rolls both
     /// back. Writes one audit_log row per moved activity. Activities where the contact is only a participant do not move.
+    /// The contact update endpoint (the contact feature story) must call this; there is no contact endpoint yet.
     /// </summary>
     public static Task<int> MoveContactActivitiesAsync(
         ZephyrDbContext db, Guid contactId, Guid? newAccountId, Guid? userId, CancellationToken ct = default) =>
@@ -151,10 +149,9 @@ public static partial class ActivityEndpoints
     // ---- routes ----
 
     /// <summary>201 + Location. 422 for a bad field, an unknown or unseen regarding record, a bad outcome or participant. Nothing is stored then.</summary>
-    private static async Task<IResult> CreateAsync(HttpContext context, ZephyrDbContext db, ICurrentUser current, CancellationToken ct)
+    private static async Task<IResult> CreateAsync(HttpContext context, ZephyrDbContext db, CancellationToken ct)
     {
-        await InterimRoleGate.RequireAsync(context, WriteRoles);
-        var user = current.UserId!.Value;
+        var user = (await context.CurrentUserAsync()).Id;
         var body = await WriteHooks.ReadBodyAsync(context.Request, ct);
         await WriteHooks.Run(context, Entity, body);
 
@@ -182,10 +179,9 @@ public static partial class ActivityEndpoints
         return Results.Created($"{Route}/{row.Id}", loaded.Json);
     }
 
-    private static async Task<IResult> GetAsync(Guid id, HttpContext context, ZephyrDbContext db, ICurrentUser current, CancellationToken ct)
+    private static async Task<IResult> GetAsync(Guid id, HttpContext context, ZephyrDbContext db, IPermissionService permissions, CancellationToken ct)
     {
-        var roles = await InterimRoleGate.RequireAsync(context, ReadRoles);
-        var loaded = await LoadAsync(db, id, OwnerScope(current, roles), ct);
+        var loaded = await LoadAsync(db, id, OwnerScope(permissions, await context.CurrentUserAsync(), "read"), ct);
         if (loaded is null)
         {
             return Results.NotFound();
@@ -196,11 +192,11 @@ public static partial class ActivityEndpoints
     }
 
     /// <summary>Merge-patch with <c>If-Match</c> (428 missing, 412 stale). The type cannot change. A changed regarding re-derives the account.</summary>
-    private static async Task<IResult> PatchAsync(Guid id, HttpContext context, ZephyrDbContext db, ICurrentUser current, CancellationToken ct)
+    private static async Task<IResult> PatchAsync(Guid id, HttpContext context, ZephyrDbContext db, IPermissionService permissions, CancellationToken ct)
     {
-        await InterimRoleGate.RequireAsync(context, WriteRoles);
-        var user = current.UserId!.Value;
-        var loaded = await LoadAsync(db, id, user, ct);
+        var access = await context.CurrentUserAsync();
+        var owner = OwnerScope(permissions, access, "update");
+        var loaded = await LoadAsync(db, id, owner, ct);
         if (loaded is null)
         {
             return Results.NotFound();
@@ -221,7 +217,7 @@ public static partial class ActivityEndpoints
             throw Problems.Validation(state.Errors);
         }
 
-        var parameters = Parameters(row, user);
+        var parameters = Parameters(row, access.Id);
         parameters.Add(P("loaded", NpgsqlDbType.TimestampTz, updatedAt));
         await using (var transaction = await db.Database.BeginTransactionAsync(ct))
         {
@@ -234,36 +230,40 @@ public static partial class ActivityEndpoints
             {
                 await db.Database.ExecuteSqlRawAsync(
                     "delete from activity_participant where activity_id = @id", new[] { P("id", NpgsqlDbType.Uuid, row.Id) }, ct);
-                await SaveParticipantsAsync(db, row, user, ct);
+                await SaveParticipantsAsync(db, row, access.Id, ct);
             }
 
             await transaction.CommitAsync(ct);
         }
 
-        var saved = await LoadAsync(db, id, user, ct) ?? throw new InvalidOperationException($"Activity {id} was not found after it was updated.");
+        var saved = await LoadAsync(db, id, owner, ct) ?? throw new InvalidOperationException($"Activity {id} was not found after it was updated.");
         context.Response.Headers.ETag = ETags.Compute(saved.Row.Id, saved.Row.UpdatedAt.UtcDateTime);
         return Results.Ok(saved.Json);
     }
 
-    private static async Task<IResult> DeleteAsync(Guid id, HttpContext context, ZephyrDbContext db, ICurrentUser current, CancellationToken ct)
+    private static async Task<IResult> DeleteAsync(Guid id, HttpContext context, ZephyrDbContext db, IPermissionService permissions, CancellationToken ct)
     {
-        await InterimRoleGate.RequireAsync(context, WriteRoles);
+        var user = await context.CurrentUserAsync();
         var changed = await db.Database.ExecuteSqlRawAsync(
             "update activity set deleted_at = now(), updated_at = now(), updated_by = @user " +
-            "where id = @id and created_by = @user and deleted_at is null",
-            new[] { P("id", NpgsqlDbType.Uuid, id), P("user", NpgsqlDbType.Uuid, current.UserId) },
+            "where id = @id and (@owner::uuid is null or created_by = @owner::uuid) and deleted_at is null",
+            new[]
+            {
+                P("id", NpgsqlDbType.Uuid, id),
+                P("user", NpgsqlDbType.Uuid, user.Id),
+                P("owner", NpgsqlDbType.Uuid, OwnerScope(permissions, user, "delete"))
+            },
             ct);
         return changed == 0 ? Results.NotFound() : Results.NoContent();
     }
 
     /// <summary>Keyset-paged, newest first. Default limit 25, at most 100 (more is a 400).</summary>
-    private static async Task<IResult> ListAsync(HttpContext context, ZephyrDbContext db, ICurrentUser current, CancellationToken ct)
+    private static async Task<IResult> ListAsync(HttpContext context, ZephyrDbContext db, IPermissionService permissions, CancellationToken ct)
     {
-        var roles = await InterimRoleGate.RequireAsync(context, ReadRoles);
         var args = ParseList(context.Request.Query);
         var text = await db.Database.SqlQueryRaw<string>(
             SelectPage,
-            P("owner", NpgsqlDbType.Uuid, OwnerScope(current, roles)),
+            P("owner", NpgsqlDbType.Uuid, OwnerScope(permissions, await context.CurrentUserAsync(), "read")),
             P("account", NpgsqlDbType.Uuid, args.Account),
             P("regarding_type", NpgsqlDbType.Text, args.RegardingType),
             P("regarding_id", NpgsqlDbType.Uuid, args.RegardingId),
@@ -300,8 +300,12 @@ public static partial class ActivityEndpoints
         return new Loaded(json.Deserialize<Row>(Web)!, json);
     }
 
-    /// <summary>Salesperson and BDR see their own activities; Management and Admin see all (permission matrix, scope own / org).</summary>
-    private static Guid? OwnerScope(ICurrentUser current, string[] roles) => roles.Intersect(OrgReadRoles).Any() ? null : current.UserId;
+    /// <summary>
+    /// Whose activities the caller may use for <paramref name="action"/>: null (everyone's) for <c>org</c> scope, otherwise the
+    /// caller's own. The matrix gives activity only <c>own</c> and <c>org</c>; any other scope is treated as <c>own</c>, the narrower one.
+    /// </summary>
+    private static Guid? OwnerScope(IPermissionService permissions, UserAccess user, string action) =>
+        permissions.Scope(user, Entity, action) == "org" ? null : user.Id;
 
     private static ListArgs ParseList(IQueryCollection query)
     {

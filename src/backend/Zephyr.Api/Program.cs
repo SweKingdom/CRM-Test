@@ -1,11 +1,8 @@
-using System.Text.Json;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
-using Zephyr.Api.Activities;
+using Zephyr.Api;
 using Zephyr.Api.Auth;
 using Zephyr.Api.Common;
 using Zephyr.Api.Data;
-using Zephyr.Api.Finance;
 using Zephyr.Api.Permissions;
 
 // "import" mode: apply migrations and exit, no web host (the import itself is added by its own story).
@@ -26,7 +23,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 
-// API conventions (US-133) also register the audit interceptor and the DbContext.
+// API conventions (US-133) also register the audit interceptor, the DbContext and the permission engine (US-144).
 builder.Services.AddApiConventions();
 // Sign-in (US-140): OIDC providers from configuration, session cookie, default-deny authorisation. No CORS: the SPA is same-origin.
 builder.AddZephyrAuth();
@@ -35,7 +32,7 @@ builder.Services.AddHealthChecks().AddNpgSql(_ => ZephyrDbContext.ConnectionStri
 var app = builder.Build();
 app.UseApiConventions();
 app.UseZephyrAuth();
-app.MapUsersEndpoints();
+app.MapZephyrEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {
@@ -45,24 +42,8 @@ using (var scope = app.Services.CreateScope())
     await PermissionSeeder.SeedAsync(db);
 }
 
-// Anonymous. 200 {"status":"Healthy"} when the API is up and SELECT 1 succeeds, 503 otherwise.
-app.MapHealthChecks("/health", new HealthCheckOptions
-{
-    ResponseWriter = (context, report) =>
-    {
-        context.Response.ContentType = "application/json";
-        return context.Response.WriteAsync(JsonSerializer.Serialize(new { status = report.Status.ToString() }));
-    }
-}).AllowAnonymous();
-
-app.MapExchangeRates();
-
-// Activities (US-151): the one timeline record for calls, meetings, notes, tasks and emails.
-app.MapActivityEndpoints();
-
-// By-external-id upsert and soft delete (US-135) for every entity in the registry.
-app.MapExternalUpsert(EntityRegistry.Accounts);
-app.MapSoftDelete(EntityRegistry.Accounts);
+// The engine keeps the matrix in memory: read it once the seed has run.
+await app.Services.GetRequiredService<IPermissionService>().ReloadAsync();
 
 app.Run();
 

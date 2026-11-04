@@ -123,6 +123,10 @@ partial class ZephyrDbContextModelSnapshot : ModelSnapshot
                 .HasColumnType("timestamp with time zone")
                 .HasColumnName("last_login_at");
 
+            b.Property<Guid?>("ManagerId")
+                .HasColumnType("uuid")
+                .HasColumnName("manager_id");
+
             b.Property<string>("Name")
                 .IsRequired()
                 .HasColumnType("text")

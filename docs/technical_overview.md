@@ -300,17 +300,18 @@ Integrations write idempotently through `PUT /api/v1/{plural}/by-external-id/{sy
 
 ## Permission model (US-143)
 
-- **Source of truth:** `src/backend/Zephyr.Api/Permissions/permission-matrix.csv` (embedded resource, 665 rows = 7 roles × 19 entities × 5 actions). Columns: role, entity, action, scope.
-- **Scopes:** `none`, `own`, `team`, `country`, `org`. `country` means the contracting country (`app_user.home_country`). There is no business-unit scope.
-- **Tables:**
-  - `role(key text PK, label text not null)`: 7 rows, keys in title case (Salesperson, BDR, PM, Consultant, Finance, Management, Admin).
-  - `role_permission(role_key FK role, entity, action in read|create|update|delete|approve, scope in none|own|team|country|org)`, PK (role_key, entity, action). All 665 rows are stored; an absent row also means `none`.
-  - `app_user.manager_id uuid null` FK `app_user(id)`, check `manager_id <> id`, partial index.
-- **Migration:** `0004_RolesPermissions`. `Down` drops both tables and the column.
-- **Seeding:** `PermissionSeeder.SeedAsync` validates the CSV first (unknown role, entity, action or scope; wrong header or column count; duplicate row). It then upserts in one transaction, skips unchanged rows, and deletes rows and roles no longer in the CSV. It runs at API start after `Migrate()` and in `import` mode. An invalid CSV stops the API.
-- **Not built yet:** the enforcement engine (scope predicates, `RequirePermission`).
-- **Docs:** `docs/permissions.md` (model, team, project-scoped access, matrix).
-- **Tests:** `MatrixTests` (`Ac1_*` to `Ac5_*`, Respawn reset regression). DB tests need `ZEPHYR_TEST_DB`.
+Covers US-143 and US-144. Enforcement is in `Permissions/`.
+
+- **Source of truth:** roles, home country and team come from `app_user` through `IUserStatus.GetAsync`, cached for `USER_STATUS_RECHECK_SECONDS` (default 300). Claims are not used for authorisation, so cookie and token sessions behave the same.
+- **Scopes:** `own` (owner column = caller), `team` (owner in caller's team), `country` (country column = home country; never matches without one), `org` (all rows). The widest scope across the caller's roles applies. Values are bound as query parameters.
+- **Columns:** `PermissionService.Columns` maps each entity to its owner and country columns. Today: `account` (owner `created_by`).
+- **Endpoint declarations:** `RequirePermission(entity, action)` returns 401 when nobody is signed in and 403 when the scope is `none`. `RequireRoles(...)` is used for role-only routes: external upsert (Admin, Integration) and soft delete (Admin). `AsMeEndpoint()` marks routes for the caller only.
+- **Single-record access:** `FindAsync` returns 404 when the caller cannot read the record and 403 when it can read but may not perform the action.
+- **Default deny:** every endpoint must declare a permission, use `RequireRoles`, be `me`, or be on the anonymous allow-list in `AnonymousAllowList.cs`. A test enumerates endpoints and fails on any other.
+- **UI parity:** `GET /api/v1/me/permissions` (`Cache-Control: no-store`) returns `{roles, permissions, routes}` from the same engine. The frontend route guard reads it once per page load and again after a 401 or 403.
+- **Extension rule:** entity list, detail and search routes must use `PermissionService.Filter` and `FindAsync` and declare their columns in `PermissionService.Columns`. Project-based predicates for `project` and `time_entry` are added by US-145.
+- **Limits:** field-level security is not implemented. Token tests use a stand-in handler until US-142's real token handler is merged; AC 5 and AC 7 must be re-run then.
+- **Files:** `docs/permissions.md` (enforcement section).
 
 ## Claude usage logging (US-138)
 
@@ -319,3 +320,86 @@ Integrations write idempotently through `PUT /api/v1/{plural}/by-external-id/{sy
 - PR template: `.github/pull_request_template.md` has a `## Claude usage` section (Tokens in, Tokens out, Cost (USD)). The author pastes the story total from the report.
 - No separate usage script or log format exists (PO #88). Tests in `tests/docs.test.mjs` cover the template section.
 - `tools/claude-usage/` and `docs/claude-usage/` are not part of this workspace branch.
+
+## Approvers and delegation (US-145)
+
+**Tables** (migration `0005_Approvers`, SQL only; the EF model is unchanged)
+
+| Table | Columns | Notes |
+|---|---|---|
+| `project_approver` | `project_id uuid not null`, `user_id` FK to `app_user`, `created_at`, `created_by`, PK (`project_id`, `user_id`) | No project FK until US-161. Hard delete, no soft delete. |
+| `approval_delegation` | `delegator_id`, `delegate_id`, `from_date`, `to_date`, `revoked_at`, `deleted_at`, conventional audit columns | Check `ck_approval_delegation_dates` (`to_date >= from_date`), check `ck_approval_delegation_not_self` (`delegator_id <> delegate_id`), index on (`delegate_id`, `from_date`, `to_date`). |
+
+**Endpoints** (`Permissions/Approvers.cs`, registered by `MapApprovers()` from `MapZephyrEndpoints()`)
+
+| Route | Role | Result |
+|---|---|---|
+| `PUT /api/v1/projects/{id}/approvers/{userId}` | Admin | 204, idempotent; 404 for unknown user |
+| `DELETE /api/v1/projects/{id}/approvers/{userId}` | Admin | 204, idempotent |
+| `POST /api/v1/delegations` | Any role; Admin may pass `delegatorId` | 201; 422 or 403 as in the task document |
+| `GET /api/v1/delegations` | Any role | Own delegations; Admin sees all |
+| `DELETE /api/v1/delegations/{id}` | Delegator or Admin | 204; 404 if unknown, already revoked or not the caller's |
+
+**Helpers** (DB-backed, never cached; `today` = `BusinessClock.Today()`)
+- `ApproverScopeAsync(userId, today)`: the projects the user approves directly, plus the delegator's projects for active delegations.
+- `IsApproverOfAsync(userId, projectId, today)`: true when the project is in that scope.
+- `EnsureNotSelfApproval(entryUserId, callerId)`: throws a 403 problem when they match.
+
+**Active delegation:** `revoked_at IS NULL AND deleted_at IS NULL AND today BETWEEN from_date AND to_date`. Delegation is not transitive.
+
+**Audit:** `approver_added`, `approver_removed`, `delegation_created`, `delegation_revoked`.
+
+**Deferred:** the `PermissionService` OR-predicate (US-144), the PM-of-project rule and project FK (US-161), and endpoint-level self-approval and time-entry 404 checks (US-166, US-170). Details in `docs/permissions.md`.
+
+## API description (OpenAPI)
+
+The API description is generated, committed and checked on every change (US-136).
+
+| Item | Value |
+|---|---|
+| Generated file | `docs/api/openapi.json` (OpenAPI 3.1.0, `servers[0].url` = `/api/v1`) |
+| Generator | `tools/openapi-from-metadata/generate.mjs` (Node only, no dependencies); `[metadata.json] [--out file]` |
+| Metadata source | `tools/openapi-from-metadata/field-metadata.json` (interim, hand-maintained; see US-182) |
+| Output format | `JSON.stringify`, sorted keys, 2-space indent, LF. No timestamps. |
+| Lint | Spectral 6.15.0 with `.spectral.yaml` (`SPECTRAL_VERSION`) |
+| Breaking-change check | oasdiff 1.11.7 (`OASDIFF_VERSION`), base `origin/main:docs/api/openapi.json` |
+| Contract test | `OpenApiContractTests` (registered routes must equal documented routes) |
+
+Rules:
+- Never edit `docs/api/openapi.json` by hand. Change the metadata and run `node tools/openapi-from-metadata/generate.mjs`.
+- Shared components: `ProblemDetails` (errors, `application/problem+json`), `Page` (list endpoints), `Money` (money fields), parameters `Limit`, `Cursor`, `Filter`, `Sort`, `IfMatch` (`If-Match`), header `ETag`.
+- Breaking changes (removed field, narrowed type, new required property) fail the oasdiff step unless a deliberate break is approved via PR label and an `oasdiff` changelog note.
+- The `openapi-regenerate` step fails with "run generate" when the committed file differs from the generated output.
+
+## Permission tests (US-146)
+
+Backend tests in `Zephyr.Api.Tests/Permissions/MatrixCoverageTests.cs` check the permission matrix (`permission-matrix.csv`) against the stored data and the live API.
+
+- **Setup:** the real app runs on the test database (`ZEPHYR_TEST_DB`) with a test-only auth handler (`X-Test-User`, `X-Test-Role`) and seven seeded role users.
+- **Matrix cases:** one case per CSV row (665). Where a probe exists, `none` must return exactly 403; other scopes must not return 401, 403 or 5xx.
+- **Probes:** account delete, app_user update, reference_data read, create and update. Probes never write data.
+- **OutsideMatrix:** `/api/v1` routes that are not matrix cells, each with a reason (by-external-id PUT is an integration route, see US-135; `me/permissions`; approver and delegation routes).
+- **Pending:** 16 entities without routes yet, mapped to their owning story. An entity is either probed or pending.
+- **Meta-tests:** every route is probed or listed in OutsideMatrix; anonymous requests get 401 on every probed route.
+- **Admin account rule:** Admin has `delete` = `org` on `account` (PO answer #156).
+- **Gate:** the tests run in step `tests` of `scripts/check`. `scripts/check --ui` (`-Ui`) adds step `ui`, which fails until `src/frontend/e2e` exists.
+- **CI:** set `ZEPHYR_REQUIRE_DB=1` so the database tests cannot be skipped.
+- **Not yet built:** Playwright UI routes, time privacy, search leak tests (follow-up stories).
+
+## Search (US-147)
+
+**Migration:** `0004_SearchDocument` creates `f_unaccent`, `f_search_norm`, table `search_document` (GIN indexes `ix_search_document_tsv` and `ix_search_document_text_trgm`), `search_upsert`, and helper `search_install_trigger(table, type, title_expr, text_expr, [subtitle, owner_id, account_id, country_code, business_unit, hidden])`. Only the account trigger exists; each later entity story adds one helper call in its own migration with `p_hidden` (for contact and lead: `new.anonymised_at is not null`) and its trigger test.
+
+**Sync:** triggers run in the same transaction as the change (insert, update, delete). Soft-deleted rows (`deleted_at`) are removed from the index; restoring them re-adds them.
+
+**Normalisation:** `f_search_norm` = trim(punctuation→space(lower(f_unaccent(x)))), used for stored text, titles and queries.
+
+**API:** `GET /api/v1/search?q=&types=&limit=`. `q` 2–100 characters, `limit` 1–50 (default 20), `types` CSV of account, contact, lead, opportunity, project. Response `{items:[{type,id,title,snippet,score}], fallback}`. Errors: 400 problem+json (bad parameters, repeated or unknown parameters), 401 without session, 403 without a matrix role that may read a searchable type.
+
+**Read scope:** per type, `IPermissionService.Scope(user, type, "read")` gives the scope arrays `@org`, `@own`, `@team`, `@country`, applied as a WHERE filter before ranking. Account owner is `created_by`; account country is the contracting country. The route is declared with `RequireRoles` for all matrix roles. Integration clients get 403.
+
+**Ranking:** full-text: exact title, title prefix, `ts_rank_cd` plus recent-activity boost, entity weight, `updated_at` desc. Trigram: `word_similarity` (threshold 0.3) desc, weight, `updated_at`. The trigram step runs only when full-text returns fewer than 5 items (`fallback=true`).
+
+**Performance:** `tools/search-benchmark/bench.mjs` (`npm run bench:search`, optional `--explain`) runs 100 queries and reports p95. Seed volume ends with `REINDEX` and `ANALYZE` of `search_document`.
+
+**Limitations:** the route is not in `docs/api/openapi.json` yet.
