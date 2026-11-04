@@ -161,6 +161,10 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
     private static readonly Probe UserPatch = new("PATCH", "/api/v1/users/{id}", $"/api/v1/users/{Missing}", """{"active":true}""");
     private static readonly Probe RatesGet = new("GET", "/api/v1/exchange-rates", "/api/v1/exchange-rates");
     private static readonly Probe RatesPut = new("PUT", "/api/v1/exchange-rates/{currency}/{month}", "/api/v1/exchange-rates/ZZZ/2026-11", """{"rateToSek":"x"}""");
+    private static readonly Probe TimeEntryGet = new("GET", "/api/v1/time-entries", "/api/v1/time-entries");
+    private static readonly Probe TimeEntryPost = new("POST", "/api/v1/time-entries", "/api/v1/time-entries", "{}");
+    private static readonly Probe TimeEntryPatch = new("PATCH", "/api/v1/time-entries/{id:guid}", $"/api/v1/time-entries/{Missing}", "{}");
+    private static readonly Probe TimeEntryDelete = new("DELETE", "/api/v1/time-entries/{id:guid}", $"/api/v1/time-entries/{Missing}");
 
     /// <summary>
     /// The API probe of an (entity, action). The PUT routes create and update, so they serve both actions. The account create
@@ -172,7 +176,11 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
         [("app_user", "update")] = UserPatch,
         [("reference_data", "read")] = RatesGet,
         [("reference_data", "create")] = RatesPut,
-        [("reference_data", "update")] = RatesPut
+        [("reference_data", "update")] = RatesPut,
+        [("time_entry", "read")] = TimeEntryGet,
+        [("time_entry", "create")] = TimeEntryPost,
+        [("time_entry", "update")] = TimeEntryPatch,
+        [("time_entry", "delete")] = TimeEntryDelete
     };
 
     /// <summary>
@@ -206,7 +214,6 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
         ["project_team_member"] = "project register, US-161",
         ["skill"] = "skills feature story (not built yet)",
         ["time_type"] = "time feature stories (not built yet)",
-        ["time_entry"] = "time entry reads and approval, US-166 and US-170",
         ["service_request"] = "service request feature story (not built yet)",
         ["api_token"] = "API token feature story (not built yet)",
         ["audit_log"] = "audit log read story (not built yet)",

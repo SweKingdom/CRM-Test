@@ -352,6 +352,140 @@ partial class ZephyrDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint("ck_external_id_system", "\"system\" IN ('dynamics', 'fortnox')");
             });
         });
+
+        modelBuilder.Entity("Zephyr.Api.Data.TimeEntry", b =>
+        {
+            b.Property<Guid>("Id")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("uuid")
+                .HasColumnName("id")
+                .HasDefaultValueSql("gen_random_uuid()");
+
+            b.Property<DateTime?>("ApprovedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("approved_at");
+
+            b.Property<Guid?>("ApprovedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("approved_by");
+
+            b.Property<bool>("Billable")
+                .HasColumnType("boolean")
+                .HasColumnName("billable");
+
+            b.Property<DateTime>("CreatedAt")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("CreatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("created_by");
+
+            b.Property<string>("Custom")
+                .IsRequired()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("jsonb")
+                .HasColumnName("custom")
+                .HasDefaultValueSql("'{}'::jsonb");
+
+            b.Property<DateTime?>("DeletedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("deleted_at");
+
+            b.Property<int>("DurationMinutes")
+                .HasColumnType("integer")
+                .HasColumnName("duration_minutes");
+
+            b.Property<string>("DynamicsId")
+                .HasColumnType("text")
+                .HasColumnName("dynamics_id");
+
+            b.Property<string>("IsoWeek")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("iso_week");
+
+            b.Property<string>("Notes")
+                .HasMaxLength(500)
+                .HasColumnType("character varying(500)")
+                .HasColumnName("notes");
+
+            b.Property<Guid?>("ProjectId")
+                .HasColumnType("uuid")
+                .HasColumnName("project_id");
+
+            b.Property<string>("RejectionComment")
+                .HasColumnType("text")
+                .HasColumnName("rejection_comment");
+
+            b.Property<string>("Source")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("source");
+
+            b.Property<string>("Status")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("status");
+
+            b.Property<DateTime?>("SubmittedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("submitted_at");
+
+            b.Property<string>("TimeTypeKey")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("time_type_key");
+
+            b.Property<DateTime>("UpdatedAt")
+                .IsConcurrencyToken()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("updated_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("UpdatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("updated_by");
+
+            b.Property<Guid>("UserId")
+                .HasColumnType("uuid")
+                .HasColumnName("user_id");
+
+            b.Property<DateOnly>("WorkDate")
+                .HasColumnType("date")
+                .HasColumnName("work_date");
+
+            b.HasKey("Id")
+                .HasName("pk_time_entry");
+
+            b.HasIndex("DynamicsId")
+                .IsUnique()
+                .HasDatabaseName("ux_time_entry_dynamics_id")
+                .HasFilter("dynamics_id is not null");
+
+            b.HasIndex("ProjectId", "WorkDate")
+                .HasDatabaseName("ix_time_entry_project_id_work_date");
+
+            b.HasIndex("UserId", "WorkDate")
+                .HasDatabaseName("ix_time_entry_user_id_work_date");
+
+            b.HasIndex("UserId", "IsoWeek", "Status")
+                .HasDatabaseName("ix_time_entry_user_id_iso_week_status");
+
+            b.ToTable("time_entry", null, t =>
+            {
+                t.HasCheckConstraint("ck_time_entry_duration", "duration_minutes > 0 and duration_minutes % 15 = 0");
+
+                t.HasCheckConstraint("ck_time_entry_iso_week", "iso_week ~ '^[0-9]{4}-W[0-9]{2}$'");
+
+                t.HasCheckConstraint("ck_time_entry_source", "source in ('ui', 'api', 'mcp', 'import', 'form', 'webhook', 'automation')");
+
+                t.HasCheckConstraint("ck_time_entry_status", "status in ('Draft', 'Submitted', 'Approved', 'Rejected')");
+            });
+        });
 #pragma warning restore 612, 618
     }
 }

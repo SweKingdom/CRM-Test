@@ -5,6 +5,7 @@ using Zephyr.Api.Common;
 using Zephyr.Api.Finance;
 using Zephyr.Api.Permissions;
 using Zephyr.Api.Search;
+using Zephyr.Api.Time;
 
 namespace Zephyr.Api;
 
@@ -29,6 +30,9 @@ public static class Endpoints
         }).AllowAnonymous();
 
         app.MapExchangeRates();
+
+        // Weekly time entries with validation rules (US-163).
+        app.MapTimeEntries();
 
         // Global search (US-147).
         app.MapSearch();

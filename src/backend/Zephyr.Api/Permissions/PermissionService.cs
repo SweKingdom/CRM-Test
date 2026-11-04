@@ -63,11 +63,12 @@ public sealed class PermissionService(IServiceScopeFactory? scopes = null) : IPe
     /// <summary>
     /// Where each entity keeps its owner and contracting country. An entity that is filtered by <c>own</c>, <c>team</c> or
     /// <c>country</c> must be here (a missing entry is a programming error and fails loudly). The account's owner is
-    /// <c>created_by</c> until the account feature adds an owner column.
+    /// <c>created_by</c> until the account feature adds an owner column; a time entry's owner is the person it belongs to.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, ScopeColumns> Columns = new Dictionary<string, ScopeColumns>
     {
-        ["account"] = new(nameof(Account.CreatedBy), nameof(Account.CountryCode))
+        ["account"] = new(nameof(Account.CreatedBy), nameof(Account.CountryCode)),
+        ["time_entry"] = new(nameof(TimeEntry.UserId))
     };
 
     private readonly SemaphoreSlim loading = new(1, 1);

@@ -68,6 +68,56 @@ public class ExchangeRate : IEntity
 }
 
 /// <summary>
+/// Hours a person reported on a day (US-163). The money columns of the table (rate, amount, currency, amount in SEK, rate date) are
+/// stamped at approval (US-167), which maps them; <c>project_id</c> gets its foreign key with the project register (US-161).
+/// </summary>
+public class TimeEntry : IEntity
+{
+    public const string Draft = "Draft";
+    public const string Submitted = "Submitted";
+    public const string Approved = "Approved";
+    public const string Rejected = "Rejected";
+
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public Guid? UpdatedBy { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string Custom { get; set; } = "{}";
+
+    /// <summary>The person the time belongs to; also the owner for the permission scopes.</summary>
+    public Guid UserId { get; set; }
+
+    /// <summary>Null only for a time type that does not need a project.</summary>
+    public Guid? ProjectId { get; set; }
+
+    public string TimeTypeKey { get; set; } = "";
+
+    /// <summary>The Europe/Stockholm business date the time was worked.</summary>
+    public DateOnly WorkDate { get; set; }
+
+    /// <summary>Whole 15-minute steps.</summary>
+    public int DurationMinutes { get; set; }
+
+    /// <summary>Derived from <see cref="WorkDate"/> by the server, for example <c>2026-W45</c>.</summary>
+    public string IsoWeek { get; set; } = "";
+
+    public bool Billable { get; set; }
+    public string Status { get; set; } = Draft;
+    public DateTime? SubmittedAt { get; set; }
+    public Guid? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? RejectionComment { get; set; }
+    public string? Notes { get; set; }
+
+    /// <summary>The channel that created the entry: ui, api, mcp, import, form, webhook or automation.</summary>
+    public string Source { get; set; } = "";
+
+    public string? DynamicsId { get; set; }
+}
+
+/// <summary>
 /// A person who can sign in (US-140). Users are pre-provisioned: <see cref="Issuer"/> and <see cref="Subject"/> stay null
 /// until the first sign-in links the identity provider's user. No password or secret of any kind is stored.
 /// </summary>
@@ -115,6 +165,7 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
     public DbSet<ExternalId> ExternalIds => Set<ExternalId>();
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
+    public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
     public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
@@ -175,6 +226,25 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
             e.Property(x => x.Month).HasColumnType("date");
             e.Property(x => x.RateToSek).HasColumnType("numeric(18,6)");
             e.HasIndex(x => new { x.Currency, x.Month }).IsUnique().HasDatabaseName("ux_exchange_rate_currency_month");
+        });
+
+        // The table, its checks and its foreign keys come from migration 0006; the indexes are listed so the snapshot knows them.
+        // status and billable have no model default: EF always sends them.
+        modelBuilder.Entity<TimeEntry>(e =>
+        {
+            e.ToTable("time_entry", t =>
+            {
+                t.HasCheckConstraint("ck_time_entry_duration", "duration_minutes > 0 and duration_minutes % 15 = 0");
+                t.HasCheckConstraint("ck_time_entry_iso_week", "iso_week ~ '^[0-9]{4}-W[0-9]{2}$'");
+                t.HasCheckConstraint("ck_time_entry_status", "status in ('Draft', 'Submitted', 'Approved', 'Rejected')");
+                t.HasCheckConstraint("ck_time_entry_source", "source in ('ui', 'api', 'mcp', 'import', 'form', 'webhook', 'automation')");
+            });
+            e.Property(x => x.WorkDate).HasColumnType("date");
+            e.Property(x => x.Notes).HasMaxLength(500);
+            e.HasIndex(x => new { x.UserId, x.WorkDate }).HasDatabaseName("ix_time_entry_user_id_work_date");
+            e.HasIndex(x => new { x.ProjectId, x.WorkDate }).HasDatabaseName("ix_time_entry_project_id_work_date");
+            e.HasIndex(x => new { x.UserId, x.IsoWeek, x.Status }).HasDatabaseName("ix_time_entry_user_id_iso_week_status");
+            e.HasIndex(x => x.DynamicsId).IsUnique().HasFilter("dynamics_id is not null").HasDatabaseName("ux_time_entry_dynamics_id");
         });
 
         // The unique index on lower(email) (an expression index) is created by the migration only.

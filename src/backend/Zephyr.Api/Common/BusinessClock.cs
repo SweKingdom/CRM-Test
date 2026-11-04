@@ -17,6 +17,12 @@ public sealed class BusinessClock(TimeProvider time)
 
     public bool IsFuture(DateOnly date) => date > Today();
 
+    /// <summary>
+    /// Whether the period (month) of <paramref name="date"/> is locked against new and changed time entries. The seam time entries
+    /// call; always false until the period-lock story (US-168) decides it from the period approvals.
+    /// </summary>
+    public bool IsLocked(DateOnly date) => false;
+
     public (int Year, int Week) IsoWeek(DateOnly date)
     {
         var day = date.ToDateTime(TimeOnly.MinValue);
