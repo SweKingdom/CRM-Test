@@ -107,14 +107,20 @@ Tip: the usage files are written automatically by the pre-commit hook. Do not ed
 
 ## Searching for records
 
-How to find an account quickly, even with a partial or misspelled name.
+The search box is at the top of every page.
 
-1. Type at least 2 characters in the search box.
-2. Results list the best matches first. Exact name matches come first, then names that start with your text, then close matches.
-3. Accents are ignored: typing "malmo" finds "Malmö".
-4. If few exact matches exist, the search also shows close matches (small typos, partial words).
-5. You only see records you are allowed to read. If a record you expect is missing, check with your administrator.
+1. Click the **Search** box in the header, or press `/` on the keyboard to jump to it.
+2. Type at least two letters. After a short pause a list appears, grouped by type (for example Accounts and Contacts). Each group shows up to five matches.
+3. Use the **Down** and **Up** arrow keys to highlight a result, then press **Enter** to open it. Accounts open the Account 360 page; contacts open the Contact 360 page.
+4. To see every match, press **Enter** without highlighting a result. The **Search results** page opens with all matches grouped by type.
+5. Press **Esc** to close the list.
 
-Tips:
-- Searches shorter than 2 characters or longer than 100 characters are rejected with a message.
-- Searching for text without letters or digits returns no results.
+**Tips**
+- If no record matches, the list says "No results for …". Check the spelling or type fewer letters.
+- If the message "Search is unavailable right now. Try again." appears, select **Try again**. You can still use the navigation menu while search is unavailable.
+- On a phone, the navigation is behind the **Menu** button. The search box has its own row below the header.
+- Lead, opportunity and project results may show "Not available yet" until those screens are released.
+
+**Navigation**
+- The menu lists only the screens your role may open. If a screen is missing, ask your administrator for access.
+- Dates are shown as `2026-11-02`; times are shown in Swedish time (Europe/Stockholm).

@@ -1,0 +1,265 @@
+/* Tokens: every text/background pair here is at least 4.5:1 (WCAG 2.1 AA); borders and focus rings at least 3:1. */
+:root {
+  --text: #1a1a1a;
+  --muted: #4a4a4a;
+  --bg: #ffffff;
+  --surface: #eef2f7;
+  --primary: #0b3d75;
+  --on-primary: #ffffff;
+  --border: #6b7686;
+  --highlight: #d3e3f8;
+  --space: 1rem;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: var(--primary);
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin-top: 0;
+}
+
+h2 {
+  font-size: 1.15rem;
+}
+
+/* Focus: a blue ring with a white halo, visible on the white page and on the dark header. */
+:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px #ffffff;
+}
+
+button {
+  font: inherit;
+  color: var(--primary);
+  background: var(--bg);
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space);
+  top: -4rem;
+  z-index: 20;
+  padding: 0.5rem 1rem;
+  background: var(--bg);
+}
+
+.skip-link:focus {
+  top: 0.5rem;
+}
+
+/* Header */
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem var(--space);
+  padding: 0.5rem var(--space);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.brand {
+  color: var(--on-primary);
+  font-weight: 700;
+  font-size: 1.25rem;
+  text-decoration: none;
+}
+
+.menu-button {
+  display: none;
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+/* Search */
+.search {
+  position: relative;
+  flex: 1 1 18rem;
+  max-width: 40rem;
+  min-width: 0;
+}
+
+.search input {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.45rem 0.75rem;
+}
+
+.search input::placeholder {
+  color: var(--muted);
+}
+
+.search-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  max-height: 70vh;
+  overflow-y: auto;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 25%);
+}
+
+.search-message {
+  margin: 0;
+  padding: 0.75rem;
+}
+
+.search-group {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.search-option {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0.75rem;
+  color: var(--text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.search-option.active,
+.search-option:hover {
+  background: var(--highlight);
+}
+
+.hit-title {
+  font-weight: 600;
+}
+
+.hit-snippet {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.result-list {
+  list-style: none;
+  padding: 0;
+}
+
+.result-list li {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--surface);
+  overflow-wrap: anywhere;
+}
+
+/* Navigation */
+.app-nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem var(--space);
+  margin: 0;
+  padding: 0.5rem var(--space);
+  list-style: none;
+}
+
+.app-nav a {
+  display: inline-block;
+  padding: 0.25rem 0;
+  color: var(--primary);
+}
+
+.app-nav a[aria-current="page"] {
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 3px solid var(--primary);
+}
+
+main {
+  padding: var(--space);
+  overflow-wrap: anywhere;
+}
+
+/* Phone size: the navigation collapses into the menu button; the search box stays on its own full-width row. */
+@media (max-width: 640px) {
+  .menu-button {
+    display: inline-block;
+    margin-left: auto;
+  }
+
+  .user {
+    margin-left: 0;
+    flex-basis: 100%;
+    justify-content: space-between;
+    order: 4;
+  }
+
+  .search {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .app-nav {
+    display: none;
+  }
+
+  .app-nav.open {
+    display: block;
+  }
+
+  .app-nav ul {
+    flex-direction: column;
+  }
+
+  .app-nav a {
+    padding: 0.5rem 0;
+  }
+}

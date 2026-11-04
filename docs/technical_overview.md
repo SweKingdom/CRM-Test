@@ -403,3 +403,41 @@ Backend tests in `Zephyr.Api.Tests/Permissions/MatrixCoverageTests.cs` check the
 **Performance:** `tools/search-benchmark/bench.mjs` (`npm run bench:search`, optional `--explain`) runs 100 queries and reports p95. Seed volume ends with `REINDEX` and `ANALYZE` of `search_document`.
 
 **Limitations:** the route is not in `docs/api/openapi.json` yet.
+
+## App shell and global search (US-148)
+
+**Frontend stack:** React, TypeScript, Vite, React Router, TanStack Query, plain CSS with variables. Playwright and axe-core for e2e and accessibility, vitest for unit tests. Served as static files by the API container. No UI-kit dependency.
+
+**Modules**
+| Path | Purpose |
+|---|---|
+| `src/frontend/src/main.tsx`, `App.tsx` | Router, QueryClient, routes |
+| `src/frontend/src/permissions.tsx` | `SignedIn` gate (loading, sign-in redirect, failure, ready), `AccessDenied` |
+| `src/frontend/src/shell/Layout.tsx` | Header, navigation (path + label array), phone menu, skip link |
+| `src/frontend/src/shell/SearchBox.tsx` | Combobox, 250 ms debounce, grouped dropdown, live region |
+| `src/frontend/src/pages/SearchResults.tsx` | `/search?q=` grouped results |
+| `src/frontend/src/lib/api.ts` | Fetch wrapper, `credentials: 'same-origin'`, RFC 9457 `ApiError` |
+| `src/frontend/src/lib/search.ts` | `useSearch`, grouping, record paths |
+| `src/frontend/src/lib/format.ts` | `formatDate`, `formatDateTime` (Europe/Stockholm) |
+
+**Authentication and permissions**
+- No tokens are stored in localStorage. The session is a cookie (FT-111).
+- Navigation is driven by `GET /api/v1/me/permissions` (the routes list from the US-144 permission engine). The frontend does not duplicate entity and action rules.
+- A 401 from `GET /api/v1/me/permissions` redirects to `/auth/login`.
+
+**Search**
+- Calls `GET /api/v1/search`. Requests are cancelled when the input changes.
+- Result links: `/accounts/{id}`, `/contacts/{id}`; lead, opportunity and project routes show a placeholder until those stories land.
+
+**Dates and time zones**
+- All dates and times go through `lib/format.ts`. Display uses Europe/Stockholm.
+- Per-user time zone is an open decision (PO answer #80): a user time zone field, defaulting to Europe/Stockholm, is to be used for "today" decisions. Not implemented in US-148.
+
+**Testing and gate**
+- `scripts/check` runs the frontend `test` script (vitest) and the frontend `typecheck`.
+- `npm run e2e` (or `scripts/check --ui`) runs the Playwright specs, including axe, outside the default gate (PO answer #163). It needs a Playwright browser. Follow-up: CI runs it on every PR.
+
+**Deployment**
+- `src/frontend/package-lock.json` must be generated (`npm install --prefix src/frontend`) and committed.
+- `npx playwright install chromium` once for e2e.
+- Optional `ZEPHYR_E2E_USER` and `ZEPHYR_E2E_PASSWORD` enable the Keycloak smoke test.

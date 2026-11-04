@@ -4,6 +4,10 @@ bin/
 obj/
 dist/
 
+# Playwright output (src/frontend: npm run e2e)
+test-results/
+playwright-report/
+
 # Secrets and generated files: never commit
 .env
 __pycache__/
