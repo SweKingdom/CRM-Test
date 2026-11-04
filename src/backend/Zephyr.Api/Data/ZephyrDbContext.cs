@@ -49,6 +49,57 @@ public class Account : IEntity
     public string? CountryCode { get; set; }
 }
 
+/// <summary>
+/// A prospect a BDR works by phone (US-153). <see cref="CallTries"/>, <see cref="LastCallOutcome"/> and <see cref="Status"/> are
+/// server-only: the call logging (US-154) and conversion (US-155) stories change them, never a client write.
+/// </summary>
+public class Lead : IEntity
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public Guid? UpdatedBy { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string Custom { get; set; } = "{}";
+    public string? FirstName { get; set; }
+    public string LastName { get; set; } = "";
+    public string CompanyName { get; set; } = "";
+    public string? JobTitle { get; set; }
+    public string? Phone { get; set; }
+    public string? Mobile { get; set; }
+    public string? Email { get; set; }
+    public string? Website { get; set; }
+
+    /// <summary>Key of an active <c>lead_source</c> picklist row (column <c>lead_source_key</c>).</summary>
+    public string LeadSource { get; set; } = "";
+
+    public string? CountryCode { get; set; }
+
+    /// <summary>Calls logged on the lead: a stored counter that US-154 increments atomically.</summary>
+    public int CallTries { get; set; }
+
+    /// <summary>Key of the <c>call_outcome</c> of the latest call (column <c>last_call_outcome_key</c>).</summary>
+    public string? LastCallOutcome { get; set; }
+
+    public string? NextStep { get; set; }
+
+    /// <summary>UTC; the call list sorts by it.</summary>
+    public DateTime? NextStepDate { get; set; }
+
+    /// <summary>Null until the lead is converted (US-155) or a client links an existing account.</summary>
+    public Guid? AccountId { get; set; }
+
+    public Guid OwnerUserId { get; set; }
+
+    /// <summary>open, converted or disqualified; changed only by US-155.</summary>
+    public string Status { get; set; } = "open";
+
+    public string? DisqualifyReason { get; set; }
+    public Guid? ConvertedContactId { get; set; }
+    public Guid? ConvertedOpportunityId { get; set; }
+}
+
 /// <summary>SEK per unit of a currency in one month (US-134). SEK itself has no row: its rate is always 1.</summary>
 public class ExchangeRate : IEntity
 {
@@ -114,6 +165,7 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
 {
     public DbSet<ExternalId> ExternalIds => Set<ExternalId>();
     public DbSet<Account> Accounts => Set<Account>();
+    public DbSet<Lead> Leads => Set<Lead>();
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
     public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -161,6 +213,26 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
             e.ToTable("account");
             e.HasKey(x => x.Id).HasName("account_pkey");
             e.Property(x => x.CountryCode).HasColumnType("character(2)");
+        });
+
+        // The table, its foreign keys (lead_source, country, call_outcome, account, app_user) and the search trigger come from
+        // migration 0006. call_tries and status have no model default: the API always sends them.
+        modelBuilder.Entity<Lead>(e =>
+        {
+            e.ToTable("lead", t =>
+            {
+                t.HasCheckConstraint("ck_lead_call_tries", "call_tries >= 0");
+                t.HasCheckConstraint("ck_lead_status", "status in ('open', 'converted', 'disqualified')");
+            });
+            e.HasKey(x => x.Id).HasName("lead_pkey");
+            e.Property(x => x.LeadSource).HasColumnName("lead_source_key");
+            e.Property(x => x.LastCallOutcome).HasColumnName("last_call_outcome_key");
+            e.Property(x => x.DisqualifyReason).HasColumnName("disqualify_reason_key");
+            e.Property(x => x.CountryCode).HasColumnType("character(2)");
+            e.HasIndex(x => new { x.OwnerUserId, x.Status, x.NextStepDate }).HasFilter("deleted_at is null")
+                .HasDatabaseName("ix_lead_owner_user_id_status_next_step_date");
+            e.HasIndex(x => x.LeadSource).HasFilter("deleted_at is null").HasDatabaseName("ix_lead_lead_source_key");
+            e.HasIndex(x => new { x.UpdatedAt, x.Id }).HasFilter("deleted_at is null").HasDatabaseName("ix_lead_updated_at_id");
         });
 
         modelBuilder.Entity<ExchangeRate>(e =>

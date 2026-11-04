@@ -15,7 +15,8 @@ public class ReferenceData : Migration
         "created_by uuid null, updated_by uuid null, deleted_at timestamptz null, " +
         "custom jsonb not null default '{}'::jsonb";
 
-    private const string ReferenceColumns =
+    /// <summary>The columns every picklist has; shared with the migrations of later picklists.</summary>
+    internal const string ReferenceColumns =
         "key text not null unique, label text not null, sort_order int not null, active boolean not null default true";
 
     private static readonly (string Table, string Extra)[] ReferenceTables =

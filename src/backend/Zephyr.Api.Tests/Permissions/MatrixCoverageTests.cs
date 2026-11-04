@@ -158,6 +158,9 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
     private sealed record Probe(string Method, string Pattern, string Url, string? Body = null);
 
     private static readonly Probe AccountDelete = new("DELETE", "/api/v1/accounts/{id:guid}", $"/api/v1/accounts/{Missing}");
+    private static readonly Probe LeadList = new("GET", "/api/v1/leads", "/api/v1/leads");
+    private static readonly Probe LeadCreate = new("POST", "/api/v1/leads", "/api/v1/leads", "{}");
+    private static readonly Probe LeadUpdate = new("PATCH", "/api/v1/leads/{id:guid}", $"/api/v1/leads/{Missing}", "{}");
     private static readonly Probe UserPatch = new("PATCH", "/api/v1/users/{id}", $"/api/v1/users/{Missing}", """{"active":true}""");
     private static readonly Probe RatesGet = new("GET", "/api/v1/exchange-rates", "/api/v1/exchange-rates");
     private static readonly Probe RatesPut = new("PUT", "/api/v1/exchange-rates/{currency}/{month}", "/api/v1/exchange-rates/ZZZ/2026-11", """{"rateToSek":"x"}""");
@@ -169,6 +172,9 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
     private static readonly Dictionary<(string Entity, string Action), Probe> Probes = new()
     {
         [("account", "delete")] = AccountDelete,
+        [("lead", "read")] = LeadList,
+        [("lead", "create")] = LeadCreate,
+        [("lead", "update")] = LeadUpdate,
         [("app_user", "update")] = UserPatch,
         [("reference_data", "read")] = RatesGet,
         [("reference_data", "create")] = RatesPut,
@@ -188,7 +194,9 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
         (new Probe("DELETE", "/api/v1/projects/{id:guid}/approvers/{userId:guid}", $"/api/v1/projects/{Missing}/approvers/{Missing}"), "Admin by role until the project register, US-145"),
         (new Probe("POST", "/api/v1/delegations", "/api/v1/delegations", "{}"), "any role, scoped to the caller (US-145)"),
         (new Probe("GET", "/api/v1/delegations", "/api/v1/delegations"), "any role, scoped to the caller (US-145)"),
-        (new Probe("DELETE", "/api/v1/delegations/{id:guid}", $"/api/v1/delegations/{Missing}"), "any role, scoped to the caller (US-145)")
+        (new Probe("DELETE", "/api/v1/delegations/{id:guid}", $"/api/v1/delegations/{Missing}"), "any role, scoped to the caller (US-145)"),
+        (new Probe("GET", "/api/v1/leads/{id:guid}", $"/api/v1/leads/{Missing}"), "the read cell of lead, probed on the list route (US-153)"),
+        (new Probe("DELETE", "/api/v1/leads/{id:guid}", $"/api/v1/leads/{Missing}"), "Admin by role: the matrix has no lead delete cell for anyone yet (US-153)")
     ];
 
     /// <summary>
@@ -198,7 +206,6 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
     private static readonly Dictionary<string, string> Pending = new()
     {
         ["contact"] = "contact feature story (not built yet)",
-        ["lead"] = "lead feature story (not built yet)",
         ["opportunity"] = "opportunity feature story (not built yet)",
         ["meddpicc"] = "opportunity feature story (not built yet)",
         ["activity"] = "activity feature story (not built yet)",
