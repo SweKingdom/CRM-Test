@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Zephyr.Api.Activities;
 using Zephyr.Api.Auth;
 using Zephyr.Api.Common;
 using Zephyr.Api.Finance;
@@ -32,6 +33,9 @@ public static class Endpoints
 
         // Global search (US-147).
         app.MapSearch();
+
+        // Activities (US-151): the one timeline record for calls, meetings, notes, tasks and emails.
+        app.MapActivityEndpoints();
 
         // By-external-id upsert and soft delete (US-135) for every entity in the registry.
         app.MapExternalUpsert(EntityRegistry.Accounts);

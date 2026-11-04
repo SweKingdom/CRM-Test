@@ -30,7 +30,10 @@ public static class ETags
     }
 
     /// <summary>428 when <c>If-Match</c> is missing, 412 when it does not match the row as loaded.</summary>
-    public static void RequireMatch(HttpRequest request, IEntity current)
+    public static void RequireMatch(HttpRequest request, IEntity current) => RequireMatch(request, current.Id, current.UpdatedAt);
+
+    /// <summary>For rows that are not <see cref="IEntity"/> objects (read with plain SQL); <paramref name="updatedAt"/> must be UTC.</summary>
+    public static void RequireMatch(HttpRequest request, Guid id, DateTime updatedAt)
     {
         var header = request.Headers.IfMatch;
         if (header.Count == 0)
@@ -38,7 +41,7 @@ public static class ETags
             throw Problems.PreconditionRequired();
         }
 
-        if (!Matches(header, Compute(current), allowWeak: false))
+        if (!Matches(header, Compute(id, updatedAt), allowWeak: false))
         {
             throw Problems.PreconditionFailed();
         }
