@@ -161,6 +161,9 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
     private static readonly Probe UserPatch = new("PATCH", "/api/v1/users/{id}", $"/api/v1/users/{Missing}", """{"active":true}""");
     private static readonly Probe RatesGet = new("GET", "/api/v1/exchange-rates", "/api/v1/exchange-rates");
     private static readonly Probe RatesPut = new("PUT", "/api/v1/exchange-rates/{currency}/{month}", "/api/v1/exchange-rates/ZZZ/2026-11", """{"rateToSek":"x"}""");
+    private static readonly Probe OpportunityList = new("GET", "/api/v1/opportunities", "/api/v1/opportunities");
+    private static readonly Probe OpportunityCreate = new("POST", "/api/v1/opportunities", "/api/v1/opportunities", "{}");
+    private static readonly Probe OpportunityPatch = new("PATCH", "/api/v1/opportunities/{id:guid}", $"/api/v1/opportunities/{Missing}", "{}");
 
     /// <summary>
     /// The API probe of an (entity, action). The PUT routes create and update, so they serve both actions. The account create
@@ -172,7 +175,10 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
         [("app_user", "update")] = UserPatch,
         [("reference_data", "read")] = RatesGet,
         [("reference_data", "create")] = RatesPut,
-        [("reference_data", "update")] = RatesPut
+        [("reference_data", "update")] = RatesPut,
+        [("opportunity", "read")] = OpportunityList,
+        [("opportunity", "create")] = OpportunityCreate,
+        [("opportunity", "update")] = OpportunityPatch
     };
 
     /// <summary>
@@ -188,7 +194,10 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
         (new Probe("DELETE", "/api/v1/projects/{id:guid}/approvers/{userId:guid}", $"/api/v1/projects/{Missing}/approvers/{Missing}"), "Admin by role until the project register, US-145"),
         (new Probe("POST", "/api/v1/delegations", "/api/v1/delegations", "{}"), "any role, scoped to the caller (US-145)"),
         (new Probe("GET", "/api/v1/delegations", "/api/v1/delegations"), "any role, scoped to the caller (US-145)"),
-        (new Probe("DELETE", "/api/v1/delegations/{id:guid}", $"/api/v1/delegations/{Missing}"), "any role, scoped to the caller (US-145)")
+        (new Probe("DELETE", "/api/v1/delegations/{id:guid}", $"/api/v1/delegations/{Missing}"), "any role, scoped to the caller (US-145)"),
+        (new Probe("GET", "/api/v1/opportunities/{id:guid}", $"/api/v1/opportunities/{Missing}"), "the opportunity read cell again: a cell holds one probe, the list (US-156)"),
+        (new Probe("DELETE", "/api/v1/opportunities/{id:guid}", $"/api/v1/opportunities/{Missing}"), "Admin by role until the matrix defines opportunity delete, as for accounts (US-156)"),
+        (new Probe("GET", "/api/v1/stages", "/api/v1/stages"), "the reference_data read cell again: that cell holds one probe, the rate list (US-156)")
     ];
 
     /// <summary>
@@ -199,8 +208,7 @@ public class MatrixCoverageTests(DbFixture fixture, PermissionWorld world) : ICl
     {
         ["contact"] = "contact feature story (not built yet)",
         ["lead"] = "lead feature story (not built yet)",
-        ["opportunity"] = "opportunity feature story (not built yet)",
-        ["meddpicc"] = "opportunity feature story (not built yet)",
+        ["meddpicc"] = "MEDDPICC story, US-157 (not built yet)",
         ["activity"] = "activity feature story (not built yet)",
         ["project"] = "project register, US-161",
         ["project_team_member"] = "project register, US-161",

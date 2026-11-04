@@ -352,6 +352,146 @@ partial class ZephyrDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint("ck_external_id_system", "\"system\" IN ('dynamics', 'fortnox')");
             });
         });
+
+        modelBuilder.Entity("Zephyr.Api.Data.Opportunity", b =>
+        {
+            b.Property<Guid>("Id")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("uuid")
+                .HasColumnName("id")
+                .HasDefaultValueSql("gen_random_uuid()");
+
+            b.Property<Guid>("AccountId")
+                .HasColumnType("uuid")
+                .HasColumnName("account_id");
+
+            b.Property<decimal?>("Amount")
+                .HasColumnType("numeric(18,2)")
+                .HasColumnName("amount");
+
+            b.Property<decimal?>("AmountSek")
+                .HasColumnType("numeric(18,2)")
+                .HasColumnName("amount_sek");
+
+            b.Property<DateTime?>("ClosedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("closed_at");
+
+            b.Property<string>("ClosedOutcome")
+                .HasColumnType("text")
+                .HasColumnName("closed_outcome");
+
+            b.Property<string>("ClosedReasonKey")
+                .HasColumnType("text")
+                .HasColumnName("closed_reason_key");
+
+            b.Property<string>("Competitor")
+                .HasColumnType("text")
+                .HasColumnName("competitor");
+
+            b.Property<string>("ContractingCountryKey")
+                .HasColumnType("text")
+                .HasColumnName("contracting_country_key");
+
+            b.Property<DateTime>("CreatedAt")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("CreatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("created_by");
+
+            b.Property<string>("Currency")
+                .HasColumnType("character(3)")
+                .HasColumnName("currency");
+
+            b.Property<string>("Custom")
+                .IsRequired()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("jsonb")
+                .HasColumnName("custom")
+                .HasDefaultValueSql("'{}'::jsonb");
+
+            b.Property<string>("CustomPlatform")
+                .HasColumnType("text")
+                .HasColumnName("custom_platform");
+
+            b.Property<DateTime?>("DeletedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("deleted_at");
+
+            b.Property<string>("DeliveryTeam")
+                .HasColumnType("text")
+                .HasColumnName("delivery_team");
+
+            b.Property<decimal?>("EstHours")
+                .HasColumnType("numeric(9,2)")
+                .HasColumnName("est_hours");
+
+            b.Property<DateOnly?>("ExpectedCloseDate")
+                .HasColumnType("date")
+                .HasColumnName("expected_close_date");
+
+            b.Property<string>("ForecastCategory")
+                .HasColumnType("text")
+                .HasColumnName("forecast_category");
+
+            b.Property<decimal?>("HourlyRate")
+                .HasColumnType("numeric(18,2)")
+                .HasColumnName("hourly_rate");
+
+            b.Property<string>("LeadSourceKey")
+                .HasColumnType("text")
+                .HasColumnName("lead_source_key");
+
+            b.Property<string>("Name")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("name");
+
+            b.Property<string>("NextStep")
+                .HasColumnType("text")
+                .HasColumnName("next_step");
+
+            b.Property<DateOnly?>("NextStepDate")
+                .HasColumnType("date")
+                .HasColumnName("next_step_date");
+
+            b.Property<Guid>("OwnerUserId")
+                .HasColumnType("uuid")
+                .HasColumnName("owner_user_id");
+
+            b.Property<string>("ProposedPo")
+                .HasColumnType("text")
+                .HasColumnName("proposed_po");
+
+            b.Property<DateOnly?>("RateDate")
+                .HasColumnType("date")
+                .HasColumnName("rate_date");
+
+            b.Property<string>("StageKey")
+                .IsRequired()
+                .HasColumnType("text")
+                .HasColumnName("stage_key");
+
+            b.Property<DateTime>("UpdatedAt")
+                .IsConcurrencyToken()
+                .ValueGeneratedOnAdd()
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("updated_at")
+                .HasDefaultValueSql("now()");
+
+            b.Property<Guid?>("UpdatedBy")
+                .HasColumnType("uuid")
+                .HasColumnName("updated_by");
+
+            b.HasKey("Id")
+                .HasName("opportunity_pkey");
+
+            b.ToTable("opportunity", (string)null);
+        });
 #pragma warning restore 612, 618
     }
 }

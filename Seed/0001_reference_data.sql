@@ -1,17 +1,26 @@
 -- Reference data. Idempotent: ON CONFLICT (key) DO UPDATE, so edits here reach existing databases.
 -- Exchange rates (SEK per unit, rate_date 2026-10-26) belong to the money story (US-134), not to these tables.
 
--- Stages (7). No decision / Disqualified are close outcomes, not stages.
-INSERT INTO stage (key, label, sort_order, active, is_terminal) VALUES
-  ('discover', 'Discover', 1, true, false),
-  ('qualify', 'Qualify', 2, true, false),
-  ('validate', 'Validate', 3, true, false),
-  ('propose', 'Propose', 4, true, false),
-  ('close', 'Close', 5, true, false),
-  ('won', 'Won', 6, true, true),
-  ('lost', 'Lost', 7, true, true)
+-- Stages (7). No decision / Disqualified are close outcomes, not stages. outcome is set on the terminal stages only.
+-- exit_criteria are the defaults agreed for F09-S01 (product owner answer #82): what must be true to leave a stage.
+-- requires = MEDDPICC element at least at that status (identified < validated); recorded = facts that must be on the deal;
+-- warnBelowIdentified = a warning, not a block, when fewer elements are identified. Mats reviews them later by editing this seed
+-- (a configuration change, no deploy of code). The gate dialog lets an owner move a deal anyway with a logged reason (US-157).
+INSERT INTO stage (key, label, sort_order, active, is_terminal, outcome, exit_criteria) VALUES
+  ('discover', 'Discover', 1, true, false, NULL,
+   '{"requires":[{"element":"identify_pain","status":"identified"},{"element":"economic_buyer","status":"identified"},{"element":"champion","status":"identified"}]}'::jsonb),
+  ('qualify', 'Qualify', 2, true, false, NULL,
+   '{"gate":"go_no_go","requires":[{"element":"economic_buyer","status":"validated"},{"element":"decision_process","status":"identified"}],"recorded":["compelling_event"]}'::jsonb),
+  ('validate', 'Validate', 3, true, false, NULL,
+   '{"requires":[{"element":"metrics","status":"validated"},{"element":"decision_criteria","status":"identified"}]}'::jsonb),
+  ('propose', 'Propose', 4, true, false, NULL,
+   '{"requires":[{"element":"decision_process","status":"validated"},{"element":"paper_process","status":"validated"}],"warnBelowIdentified":4}'::jsonb),
+  ('close', 'Close', 5, true, false, NULL, '{}'::jsonb),
+  ('won', 'Won', 6, true, true, 'won', '{}'::jsonb),
+  ('lost', 'Lost', 7, true, true, 'lost', '{}'::jsonb)
 ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sort_order,
-  active = EXCLUDED.active, is_terminal = EXCLUDED.is_terminal;
+  active = EXCLUDED.active, is_terminal = EXCLUDED.is_terminal, outcome = EXCLUDED.outcome,
+  exit_criteria = EXCLUDED.exit_criteria;
 
 -- MEDDPICC elements (8).
 INSERT INTO meddpicc_element (key, label, sort_order, active) VALUES

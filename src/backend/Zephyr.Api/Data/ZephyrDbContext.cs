@@ -49,6 +49,47 @@ public class Account : IEntity
     public string? CountryCode { get; set; }
 }
 
+/// <summary>
+/// A deal (US-156). Only <see cref="StageKey"/> is stored for the stage: the label is read from <c>stage</c>, so renaming a
+/// label changes no opportunity row. The closed fields and the SEK stamp of the amount are written by the close story (US-158).
+/// </summary>
+public class Opportunity : IEntity
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public Guid? UpdatedBy { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string Custom { get; set; } = "{}";
+    public string Name { get; set; } = "";
+    public Guid AccountId { get; set; }
+    public string StageKey { get; set; } = "";
+
+    /// <summary>Amount in <see cref="Currency"/>; both are set or both are null.</summary>
+    public decimal? Amount { get; set; }
+
+    public string? Currency { get; set; }
+    public decimal? AmountSek { get; set; }
+    public DateOnly? RateDate { get; set; }
+    public decimal? HourlyRate { get; set; }
+    public decimal? EstHours { get; set; }
+    public string? ContractingCountryKey { get; set; }
+    public string? NextStep { get; set; }
+    public DateOnly? NextStepDate { get; set; }
+    public string? LeadSourceKey { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public string? ForecastCategory { get; set; }
+    public DateOnly? ExpectedCloseDate { get; set; }
+    public string? ClosedOutcome { get; set; }
+    public string? ClosedReasonKey { get; set; }
+    public string? Competitor { get; set; }
+    public DateTime? ClosedAt { get; set; }
+    public string? CustomPlatform { get; set; }
+    public string? DeliveryTeam { get; set; }
+    public string? ProposedPo { get; set; }
+}
+
 /// <summary>SEK per unit of a currency in one month (US-134). SEK itself has no row: its rate is always 1.</summary>
 public class ExchangeRate : IEntity
 {
@@ -114,6 +155,7 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
 {
     public DbSet<ExternalId> ExternalIds => Set<ExternalId>();
     public DbSet<Account> Accounts => Set<Account>();
+    public DbSet<Opportunity> Opportunities => Set<Opportunity>();
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
     public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -161,6 +203,21 @@ public class ZephyrDbContext(DbContextOptions<ZephyrDbContext> options) : DbCont
             e.ToTable("account");
             e.HasKey(x => x.Id).HasName("account_pkey");
             e.Property(x => x.CountryCode).HasColumnType("character(2)");
+        });
+
+        // The table comes from migration 0006: its foreign keys, checks and indexes live there, the model only reads the columns.
+        modelBuilder.Entity<Opportunity>(e =>
+        {
+            e.ToTable("opportunity");
+            e.HasKey(x => x.Id).HasName("opportunity_pkey");
+            e.Property(x => x.Amount).HasColumnType("numeric(18,2)");
+            e.Property(x => x.Currency).HasColumnType("character(3)");
+            e.Property(x => x.AmountSek).HasColumnType("numeric(18,2)");
+            e.Property(x => x.RateDate).HasColumnType("date");
+            e.Property(x => x.HourlyRate).HasColumnType("numeric(18,2)");
+            e.Property(x => x.EstHours).HasColumnType("numeric(9,2)");
+            e.Property(x => x.NextStepDate).HasColumnType("date");
+            e.Property(x => x.ExpectedCloseDate).HasColumnType("date");
         });
 
         modelBuilder.Entity<ExchangeRate>(e =>
