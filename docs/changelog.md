@@ -1,5 +1,6 @@
 ## Unreleased
 
+- 2026-11-04 — US-151 Activity data model and API with regarding validation: activity table and API with server-derived account, call-outcome `connected` flag, regarding validation, and contact account move in one transaction.
 - 2026-11-04 — US-148 App shell and global search UI: header, permission-driven navigation, search box with grouped results, keyboard and accessibility support, phone layout, and shared date formatter.
 - 2026-11-03 — US-147 Search backend: full-text with trigram fallback: `GET /api/v1/search` with accent-insensitive, prefix and typo matching over accounts, results limited to the caller's read scope; index kept in sync by triggers.
 - 2026-11-03 — US-146 Automated permission test suite for seven roles: matrix tests per CSV row, route inventory and anonymous 401 checks, Admin account delete at org scope, `scripts/check --ui` step (fails until the e2e suite exists). UI, time-privacy and search tests moved to follow-up stories.
