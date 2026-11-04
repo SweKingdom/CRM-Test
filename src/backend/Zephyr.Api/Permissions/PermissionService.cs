@@ -67,7 +67,8 @@ public sealed class PermissionService(IServiceScopeFactory? scopes = null) : IPe
     /// </summary>
     public static readonly IReadOnlyDictionary<string, ScopeColumns> Columns = new Dictionary<string, ScopeColumns>
     {
-        ["account"] = new(nameof(Account.CreatedBy), nameof(Account.CountryCode))
+        ["account"] = new(nameof(Account.CreatedBy), nameof(Account.CountryCode)),
+        ["opportunity"] = new(nameof(Opportunity.OwnerUserId), nameof(Opportunity.ContractingCountryKey))
     };
 
     private readonly SemaphoreSlim loading = new(1, 1);

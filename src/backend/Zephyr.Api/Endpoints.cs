@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Zephyr.Api.Auth;
 using Zephyr.Api.Common;
 using Zephyr.Api.Finance;
+using Zephyr.Api.Opportunities;
 using Zephyr.Api.Permissions;
 using Zephyr.Api.Search;
 
@@ -32,6 +33,9 @@ public static class Endpoints
 
         // Global search (US-147).
         app.MapSearch();
+
+        // Opportunities and the stage list (US-156).
+        app.MapOpportunities();
 
         // By-external-id upsert and soft delete (US-135) for every entity in the registry.
         app.MapExternalUpsert(EntityRegistry.Accounts);

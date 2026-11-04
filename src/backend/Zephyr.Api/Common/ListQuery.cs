@@ -36,7 +36,8 @@ public sealed class ListSpec<T>
     public IReadOnlyDictionary<string, PropertyInfo> Fields { get; }
 }
 
-internal sealed record ListFilter(PropertyInfo Property, string Op, object Value);
+/// <summary><paramref name="Value"/> is null only for <c>eq</c> and <c>ne</c> with the text <c>null</c> on a nullable number, date or flag.</summary>
+internal sealed record ListFilter(PropertyInfo Property, string Op, object? Value);
 
 internal sealed record ListSort(string Name, PropertyInfo Property, bool Descending);
 
@@ -166,7 +167,7 @@ internal static class ListValues
         _ => value.ToString() ?? ""
     };
 
-    public static Expression Parameter(object value, Type type) =>
+    public static Expression Parameter(object? value, Type type) =>
         Expression.Property(
             Expression.Constant(Activator.CreateInstance(typeof(QueryValue<>).MakeGenericType(type), value)),
             nameof(QueryValue<int>.Value));
@@ -319,6 +320,12 @@ public sealed class ListQuery<T>
             throw ListValues.Bad(key, $"Operator '{op}' only works on numbers and dates and '{field}' is not one.");
         }
 
+        // filter[field][eq]=null keeps the rows without a value (and ne=null the rows with one) of a nullable number, date or flag.
+        if (op is "eq" or "ne" && raw == "null" && Nullable.GetUnderlyingType(type) is not null)
+        {
+            return new ListFilter(property, op, null);
+        }
+
         if (op != "in")
         {
             return new ListFilter(property, op, ParseValue(key, field, type, raw));
@@ -422,7 +429,7 @@ public sealed class ListQuery<T>
         var type = filter.Property.PropertyType;
         if (filter.Op == "contains")
         {
-            return ListValues.Contains(property, (string)filter.Value);
+            return ListValues.Contains(property, (string)filter.Value!);
         }
 
         if (filter.Op == "in")
