@@ -441,3 +441,28 @@ Backend tests in `Zephyr.Api.Tests/Permissions/MatrixCoverageTests.cs` check the
 - `src/frontend/package-lock.json` must be generated (`npm install --prefix src/frontend`) and committed.
 - `npx playwright install chromium` once for e2e.
 - Optional `ZEPHYR_E2E_USER` and `ZEPHYR_E2E_PASSWORD` enable the Keycloak smoke test.
+
+## Activities (US-151)
+
+Activities record calls, meetings, notes, tasks and emails. One `activity` table holds all types; `activity_participant` holds the from, to, cc and attendee participants.
+
+| Item | Detail |
+|---|---|
+| Routes | `/api/v1/activities`: POST, GET list (keyset paging, default 25, max 100, newest first), GET `/{id}`, PATCH, DELETE (soft) |
+| Filters on list | `regardingType`, `regardingId`, `accountId`, `type`, `cursor`, `limit` |
+| Regarding types | `lead`, `contact`, `account`, `opportunity`, `project`, `service_request` (type plus ID, no foreign key; validated in the API) |
+| Types | `call`, `meeting`, `note`, `task`, `email` |
+| Call outcomes | Table `call_outcome` (key, label, connected, sort), seeded in `Seed/0001_reference_data.sql`. Connected: `meeting_booked`, `not_interested`, `callback_requested`, `referred_to_colleague` = true; the other five = false |
+| Source | `source` is set by the server from the caller (`ui`, `mcp`, `import`, `api`); clients cannot set it |
+| Schema | EF migration `0005_Activity` (`Zephyr.Api/Data/Migrations/0005_Activity.cs`); applied at API start |
+| Code | `Zephyr.Api/Activities/ActivityEndpoints.cs`, `ActivityValidation.cs`; `MapActivityEndpoints()` in `Endpoints.cs` |
+
+**Server rules**
+- `account_id` is derived from the regarding record and recomputed when the regarding changes. Clients cannot send `accountId` (422).
+- `connected` comes from `call_outcome.connected` and is NULL for non-calls. Clients cannot send `connected`.
+- Contact account change: `MoveContactActivitiesAsync(db, contactId, newAccountId, userId)` joins the caller's transaction and moves activities regarding that contact. Failure rolls back both changes. Audit rows are written in the same transaction.
+- Errors use RFC 9457. 422 for invalid or unknown regarding, bad type, bad outcome key, outcome on a non-call, invalid participant. 404 for not visible. 403 for no permission.
+
+**Known gaps**
+- The OpenAPI document (`docs/api/openapi.json`) does not yet describe the activity routes. A follow-up story extends the generator (product owner decision #167).
+- Visibility predicates for lead, contact, opportunity, project and service request are not applied yet, because those tables do not exist. Each entity's story adds this check.
