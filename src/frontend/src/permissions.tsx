@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { strings } from "./strings";
 
-// The route guard is UX only: it hides and blocks screens the API would refuse anyway. The API is authoritative.
+// The permission checks here are UX only: they hide and block screens the API would refuse anyway. The API is authoritative.
 
 export type Permissions = {
   roles: string[];
@@ -15,8 +15,8 @@ type State =
   | { status: "failed" }
   | { status: "ready"; permissions: Permissions };
 
-/** Screens every signed-in user may open; every other screen must be in the `routes` the API returns. */
-const openPaths = ["/", "/access-denied"];
+/** Screens every signed-in user may open (the search results show only what the API lets the user read); every other screen must be in the `routes` the API returns. */
+const openPaths = ["/", "/search", "/access-denied"];
 
 let current: State = { status: "loading" };
 let request: Promise<void> | null = null;
@@ -78,13 +78,14 @@ function usePermissionState(): State {
   return current;
 }
 
+/** The content of the access-denied screen; the caller supplies the surrounding `main`. */
 export function AccessDenied() {
   return (
-    <main>
+    <>
       <h1>{strings.accessDeniedTitle}</h1>
       <p>{strings.accessDeniedBody}</p>
       <a href="/">{strings.goHome}</a>
-    </main>
+    </>
   );
 }
 
@@ -95,17 +96,17 @@ function SignIn({ returnUrl }: { returnUrl: string }) {
   return <p>{strings.signingIn}</p>;
 }
 
-/** Shows `children` when the user may open `path`, the access-denied page when not, and sign-in when nobody is signed in. */
-export function RouteGuard({ path, children }: { path: string; children: ReactNode }) {
+/** Shows `children` with the user's permissions once they are loaded; sends nobody who is signed out anywhere but to sign-in. */
+export function SignedIn({ children }: { children: (permissions: Permissions) => ReactNode }) {
   const state = usePermissionState();
   switch (state.status) {
     case "loading":
       return <p>{strings.loading}</p>;
     case "signed-out":
-      return <SignIn returnUrl={path + window.location.search} />;
+      return <SignIn returnUrl={window.location.pathname + window.location.search} />;
     case "failed":
       return <p role="alert">{strings.permissionsFailed}</p>;
     case "ready":
-      return canOpen(path, state.permissions.routes) ? <>{children}</> : <AccessDenied />;
+      return <>{children(state.permissions)}</>;
   }
 }
